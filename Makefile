@@ -85,10 +85,19 @@ override ARCH=$(ARCH_tmp)
 # Use this parameter to enable tracelog
 TRACE ?= 0
 
+# Use this parameter to enable the instruction trace / disassembler (Verilator)
+TRACE_DISASM ?= 0
+
 ifeq ($(TRACE), 1)
     export SIM_TRACE_DEF = SCR1_TRACE_LOG_EN
 else
     export SIM_TRACE_DEF = SCR1_TRACE_LOG_DIS
+endif
+
+ifeq ($(TRACE_DISASM), 1)
+    override SIM_TRACE_DEF += SCR1_TRACE_DISASM_EN
+else
+    override SIM_TRACE_DEF += SCR1_TRACE_DISASM_DIS
 endif
 
 
@@ -121,7 +130,7 @@ endif
 export root_dir := $(shell pwd)
 export tst_dir  := $(root_dir)/sim/tests
 export inc_dir  := $(tst_dir)/common
-export bld_dir  := $(root_dir)/build/$(current_goal)_$(BUS)_$(CFG)_$(ARCH)_IPIC_$(IPIC)_TCM_$(TCM)_VIRQ_$(VECT_IRQ)_TRACE_$(TRACE)
+export bld_dir  := $(root_dir)/build/$(current_goal)_$(BUS)_$(CFG)_$(ARCH)_IPIC_$(IPIC)_TCM_$(TCM)_VIRQ_$(VECT_IRQ)_TRACE_$(TRACE)_DISASM_$(TRACE_DISASM)
 
 test_results := $(bld_dir)/test_results.txt
 test_info    := $(bld_dir)/test_info
@@ -234,7 +243,7 @@ $(bld_dir):
 	mkdir -p $(bld_dir)
 
 run_vcs: $(test_info)
-	$(MAKE) -C $(root_dir)/sim build_vcs SIM_CFG_DEF=$(SIM_CFG_DEF) SIM_TRACE_DEF=$(SIM_TRACE_DEF) SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
+	$(MAKE) -C $(root_dir)/sim build_vcs SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
 	printf "" > $(test_results);
 	cd $(bld_dir); \
 	$(bld_dir)/simv  -V \
@@ -246,7 +255,7 @@ run_vcs: $(test_info)
 	printf "                          Test               | build | simulation \n" ; \
 	printf "$$(cat $(test_results)) \n"
 run_modelsim: $(test_info)
-	$(MAKE) -C $(root_dir)/sim build_modelsim SIM_CFG_DEF=$(SIM_CFG_DEF) SIM_TRACE_DEF=$(SIM_TRACE_DEF) SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)"; \
+	$(MAKE) -C $(root_dir)/sim build_modelsim SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)"; \
 	printf "" > $(test_results); \
 	cd $(bld_dir); \
 	vsim -c -do "run -all" +nowarn3691 \
@@ -261,7 +270,7 @@ run_modelsim: $(test_info)
 	printf "$$(cat $(test_results)) \n"
 
 run_ncsim: $(test_info)
-	$(MAKE) -C $(root_dir)/sim build_ncsim SIM_CFG_DEF=$(SIM_CFG_DEF) SIM_TRACE_DEF=$(SIM_TRACE_DEF) SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
+	$(MAKE) -C $(root_dir)/sim build_ncsim SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
 	printf "" > $(test_results);
 	cd $(bld_dir); \
 	irun \
@@ -277,7 +286,7 @@ run_ncsim: $(test_info)
 	printf "$$(cat $(test_results)) \n"
 
 run_verilator: $(test_info)
-	$(MAKE) -C $(root_dir)/sim build_verilator SIM_CFG_DEF=$(SIM_CFG_DEF) SIM_TRACE_DEF=$(SIM_TRACE_DEF) SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
+	$(MAKE) -C $(root_dir)/sim build_verilator SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
 	printf "" > $(test_results);
 	cd $(bld_dir); \
 	echo $(top_module) | tee $(sim_results); \
@@ -292,7 +301,7 @@ run_verilator: $(test_info)
 	printf "$$(cat $(test_results)) \n"
 
 run_verilator_wf: $(test_info)
-	$(MAKE) -C $(root_dir)/sim build_verilator_wf SIM_CFG_DEF=$(SIM_CFG_DEF) SIM_TRACE_DEF=$(SIM_TRACE_DEF) SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
+	$(MAKE) -C $(root_dir)/sim build_verilator_wf SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
 	printf "" > $(test_results);
 	cd $(bld_dir); \
 	echo $(top_module) | tee $(sim_results); \

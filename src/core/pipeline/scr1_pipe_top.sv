@@ -820,6 +820,20 @@ scr1_tracelog i_tracelog (
 `endif // SCR1_TRACE_LOG_EN
 );
 
+//-------------------------------------------------------------------------------
+// Instruction trace / disassembler (simulation only, TRACE_DISASM=1)
+//-------------------------------------------------------------------------------
+`ifdef SCR1_TRACE_DISASM_EN
+scr1_trace_disasm i_trace_disasm (
+    .rst_n                          (pipe_rst_n                         ),
+    .clk                            (clk                                ),
+    .valid_i                        (i_pipe_ifu.ifu2idu_vd_o & idu2ifu_rdy),
+    .new_pc_req_i                   (new_pc_req                         ),
+    .new_pc_i                       (new_pc                             ),
+    .instr_i                        (i_pipe_ifu.ifu2idu_instr_o         )
+);
+`endif // SCR1_TRACE_DISASM_EN
+
 `endif // SCR1_TRGT_SIMULATION
 
 endmodule : scr1_pipe_top

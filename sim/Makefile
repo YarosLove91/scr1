@@ -43,7 +43,7 @@ build_modelsim: $(sv_list)
 	+incdir+$(rtl_inc_tb_dir) \
 	+nowarnSVCHK  \
 	+define+SCR1_TRGT_SIMULATION \
-	+define+$(SIM_TRACE_DEF) \
+	$(addprefix +define+,$(SIM_TRACE_DEF)) \
 	+define+$(SIM_CFG_DEF) \
 	$(SIM_BUILD_OPTS) \
 	$(sv_list)
@@ -60,7 +60,7 @@ build_vcs: $(sv_list)
 	+incdir+$(rtl_inc_dir) \
 	+incdir+$(rtl_inc_tb_dir) \
 	+define+SCR1_TRGT_SIMULATION \
-	+define+$(SIM_TRACE_DEF) \
+	$(addprefix +define+,$(SIM_TRACE_DEF)) \
 	+define+$(SIM_CFG_DEF) \
 	-nc \
 	-debug_all \
@@ -79,7 +79,7 @@ build_ncsim: $(sv_list)
 	-incdir $(rtl_inc_tb_dir) \
 	-debug \
 	+define+SCR1_TRGT_SIMULATION \
-	+define+$(SIM_TRACE_DEF) \
+	$(addprefix +define+,$(SIM_TRACE_DEF)) \
 	+define+$(SIM_CFG_DEF) \
 	$(SIM_BUILD_OPTS) \
 	$(sv_list) \
@@ -95,7 +95,7 @@ build_verilator: $(sv_list)
 	$(VERILATOR_5X_OPTS) \
 	--top-module $(top_module) \
 	-DSCR1_TRGT_SIMULATION \
-	-D$(SIM_TRACE_DEF) \
+	$(addprefix -D,$(SIM_TRACE_DEF)) \
 	-D$(SIM_CFG_DEF) \
 	--clk clk \
 	--exe $(scr1_wrapper) \
@@ -117,7 +117,7 @@ build_verilator_wf: $(sv_list)
 	$(VERILATOR_5X_OPTS) \
 	--top-module $(top_module) \
 	-DSCR1_TRGT_SIMULATION \
-	-D$(SIM_TRACE_DEF) \
+	$(addprefix -D,$(SIM_TRACE_DEF)) \
 	-D$(SIM_CFG_DEF) \
 	-CFLAGS -DVCD_TRACE -CFLAGS -DTRACE_LVLV=20 \
 	-CFLAGS -DVCD_FNAME=simx.vcd \

@@ -227,6 +227,15 @@ riscv_arch: | $(bld_dir)
 hello: | $(bld_dir)
 	-$(MAKE) -C $(tst_dir)/hello EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 
+fern: | $(bld_dir)
+	$(MAKE) -C $(tst_dir)/fern EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
+
+a5_1: | $(bld_dir)
+	$(MAKE) -C $(tst_dir)/a5_1 EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
+
+conway: | $(bld_dir)
+	$(MAKE) -C $(tst_dir)/conway EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
+
 longrun: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/longrun EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 

@@ -11,7 +11,7 @@ observation (no outputs into the core, excluded from synthesis).
 
 | Waveform disassembler (VCD signals)
 | `TRACE_DISASM=1`
-| `simx.vcd` (view with GTKWave/wavepeek)
+| `build/trace/simx.vcd` (view with Surfer/GTKWave/wavepeek)
 
 | Program execution text log
 | `TRACE_LOGGER=1`
@@ -28,12 +28,15 @@ observation (no outputs into the core, excluded from synthesis).
 
 == Branches
 
+`master` contains both tracers and the bare-metal tests. The development branches are kept for
+reference:
+
 * `feat/trace-disasm` - waveform tracer (`scr1_trace_sim`, VCD output).
 * `feat/program-trace-logger` - waveform tracer + program execution text logger.
 * `fix/tests-linking-longrun` - bare-metal tests (`fern`, `a5_1`, `conway`, `longrun`) and the
-  TLS/emutls link fixes; based on `master`.
+  TLS/emutls link fixes.
 
-The bare-metal workloads are not part of the tracer branches.
+All targets listed below are available on `master`.
 
 == Prerequisites
 
@@ -54,10 +57,8 @@ cd scr1
 export CROSS_PREFIX=<path-to-toolchain>/bin/riscv-none-elf-
 ----
 
-Pick a test with `TARGETS=...`. On the tracer branches the stock targets are available
-(`riscv_isa`, `isr_sample`, `riscv_compliance`, `riscv_arch`, `dhrystone21`, `coremark`).
-The bare-metal workloads `fern`, `a5_1`, `conway` and `longrun` are on
-`fix/tests-linking-longrun`.
+Pick a test with `TARGETS=...` (`riscv_isa`, `isr_sample`, `riscv_compliance`, `riscv_arch`,
+`dhrystone21`, `coremark`, plus the bare-metal `fern`, `a5_1`, `conway`, `longrun`).
 
 === 1. Waveform trace (VCD)
 
@@ -66,7 +67,7 @@ The bare-metal workloads `fern`, `a5_1`, `conway` and `longrun` are on
 make TARGETS=riscv_isa run_verilator_wf CROSS_PREFIX=$CROSS_PREFIX TRACE_DISASM=1
 ----
 
-Output: `build/verilator_wf_AHB_MAX_imc_IPIC_1_TCM_1_VIRQ_1_TRACE_0_DISASM_1/simx.vcd`.
+Output: `build/trace/simx.vcd` (the directory is created automatically).
 
 Signals of interest (scope `...i_pipe_top.i_trace_sim`):
 
@@ -74,7 +75,7 @@ Signals of interest (scope `...i_pipe_top.i_trace_sim`):
   `dbg_inst_opcode`, `dbg_inst_str`, `dbg_inst_ra_str/rb_str/rd_str`, `dbg_inst_imm`,
   `dbg_inst_rs1_idx/rs2_idx/rd_idx`, `dbg_inst_rs1_raw/rs2_raw/rd_raw`,
   `dbg_inst_funct3/funct7`, `dbg_inst_txt_str`, `dbg_inst_unknown`;
-* combinational (one stage earlier): `dec`, `txt`.
+* combinational (one stage earlier): `dec`, `txt_str`.
 
 The record is captured on the clock edge when the IDU accepts an instruction;
 `dbg_inst_pc` is byte-accurate (RVC aware).
@@ -83,7 +84,7 @@ The record is captured on the clock edge when the IDU accepts an instruction;
 
 [source,bash]
 ----
-V=build/verilator_wf_..._DISASM_1/simx.vcd
+V=build/trace/simx.vcd
 S=TOP.scr1_top_tb_ahb.i_top.i_core_top.i_pipe_top.i_trace_sim
 wavepeek value --waves $V --at 12022ps --signals \
   $S.dbg_inst_pc $S.dbg_inst_str $S.dbg_inst_rd_str $S.dbg_inst_rd_idx

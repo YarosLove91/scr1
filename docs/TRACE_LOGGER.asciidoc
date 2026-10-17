@@ -1,9 +1,11 @@
-= SCR1 trace: waveform tracer and program execution text logger
+= SCR1 trace: waveform tracer, program execution text logger and final state dump
 :toc:
 :toclevels: 3
 
-Two simulation-only trace facilities for the SCR1 core. Both are pure
-observation (no outputs into the core, excluded from synthesis).
+Simulation-only observation facilities for the SCR1 core. The waveform tracer and
+the text logger are pure observation (no outputs into the core, excluded from
+synthesis); the final state dump reads the model through the Verilator public
+interface and writes a snapshot at the end of the run.
 
 [cols="2,2,3"]
 |===
@@ -24,17 +26,23 @@ observation (no outputs into the core, excluded from synthesis).
 | Trap details (mcause/mepc/mtval/mtvec + faulting instr)
 | `TRACE_LOGGER_TRAP_DETAIL=1` (default)
 | extra fields on `IRQ`/`EXC` lines
+
+| Final architectural state (GPR + CSR)
+| `STATE_DUMP=1`
+| `build/trace/scr1_final_state.txt` (see `docs/STATE_DUMP.asciidoc`)
 |===
 
 == Branches
 
-`master` contains both tracers and the bare-metal tests. The development branches are kept for
-reference:
+`master` contains the tracers, the final state dump and the bare-metal tests. The development
+branches are kept for reference:
 
 * `feat/trace-disasm` - waveform tracer (`scr1_trace_sim`, VCD output).
 * `feat/program-trace-logger` - waveform tracer + program execution text logger.
+* `feat/state-dump` - final architectural state dump (`scr1_state_dump.h`, `STATE_DUMP=1`).
 * `fix/tests-linking-longrun` - bare-metal tests (`fern`, `a5_1`, `conway`, `longrun`) and the
   TLS/emutls link fixes.
+* `docs/maintenance` - ongoing documentation upkeep; merged back into `master`.
 
 All targets listed below are available on `master`.
 
@@ -114,6 +122,18 @@ make TARGETS=isr_sample run_verilator CROSS_PREFIX=$CROSS_PREFIX \
 
 Adds ` | <mnemonic> <operands>` after the `Status` column. Off by default, so
 the default log keeps the strict 5-column format.
+
+=== 4. Final architectural state dump
+
+At the end of the simulation the Verilator wrapper can write the 32 GPRs, `priv`,
+and the SCR1 machine CSRs to `build/trace/scr1_final_state.txt`. The GPR block is
+compatible with the Spike debugger `reg 0` output. See `docs/STATE_DUMP.asciidoc`
+for the flags and file format.
+
+[source,bash]
+----
+make TARGETS=fern run_verilator CROSS_PREFIX=$CROSS_PREFIX STATE_DUMP=1
+----
 
 == Log format
 

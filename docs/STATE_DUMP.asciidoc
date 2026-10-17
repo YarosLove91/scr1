@@ -27,7 +27,7 @@ Variables:
 | Variable | Default | Description
 
 | `STATE_DUMP` | `0` | Build the wrapper with `-DSTATE_DUMP` and add `--public-flat-rw`
-| `STATE_FILE` | `scr1_final_state.txt` | Output file, relative to the run directory (`build/<...>`)
+| `STATE_FILE` | `scr1_final_state.txt` | Output file in `build/trace/`; an absolute path is used as-is
 | `FINAL_PC` | `0xF8` | Snapshot PC (`SCR1_SIM_EXIT_ADDR`); `none` disables PC triggering
 | `MAX_CYCLES` | `0` | Optional wrapper-side cycle limit; `0` disables
 |===
@@ -45,8 +45,8 @@ The dump is also written on `SIGINT`/`SIGTERM` and when `MAX_CYCLES` is reached.
 
 == Output
 
-The file is written to the simulation run directory, for example
-`build/verilator_AHB_MAX_imc_IPIC_1_TCM_1_VIRQ_1_TRACE_0_DISASM_0_STATE_1/scr1_final_state.txt`.
+The file is written to `build/trace/` next to the VCD and text-log outputs, for example
+`build/trace/scr1_final_state.txt`. The directory is created automatically.
 
 [source,text]
 ----

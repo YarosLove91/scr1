@@ -126,7 +126,7 @@ endif
 
 # Dump the final architectural state (GPR/CSR) from the Verilator testbench
 STATE_DUMP ?= 0
-# Output file name (relative to the simulation build directory)
+# Output file name (absolute paths are used as-is)
 STATE_FILE ?= scr1_final_state.txt
 # PC at which the snapshot is taken (default: SCR1_SIM_EXIT_ADDR); "none" disables
 FINAL_PC ?= 0xF8
@@ -134,10 +134,17 @@ FINAL_PC ?= 0xF8
 MAX_CYCLES ?= 0
 
 ifeq ($(STATE_DUMP), 1)
-    STATE_DUMP_OPT = +STATE_FILE=$(STATE_FILE) +FINAL_PC=$(FINAL_PC)
+    STATE_LOG_DIR ?= $(CURDIR)/build/trace
+    ifeq ($(filter /%,$(STATE_FILE)),)
+        STATE_FILE_PATH := $(STATE_LOG_DIR)/$(STATE_FILE)
+    else
+        STATE_FILE_PATH := $(STATE_FILE)
+    endif
+    STATE_DUMP_OPT = +STATE_FILE=$(STATE_FILE_PATH) +FINAL_PC=$(FINAL_PC)
     ifneq ($(MAX_CYCLES), 0)
         STATE_DUMP_OPT += +MAX_CYCLES=$(MAX_CYCLES)
     endif
+    $(shell mkdir -p $(STATE_LOG_DIR))
 else
     STATE_DUMP_OPT =
 endif

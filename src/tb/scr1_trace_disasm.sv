@@ -170,7 +170,7 @@ endfunction
 // Disassembler: returns packed {str, ra, rb, rd, imm} (352 bits).
 // All decoding variables are automatic function locals -> no extra signals.
 //------------------------------------------------------------------------------
-function automatic [351:0] disasm (
+function automatic [352:0] disasm (
     input [31:0] ins,
     input [31:0] pc
 );
@@ -182,6 +182,7 @@ function automatic [351:0] disasm (
     logic [31:0] imm_i, imm_s, imm_b, imm_u, imm_j;
     logic [79:0] o_str, o_ra, o_rb, o_rd;
     logic [31:0] o_imm;
+    logic        unk;   // set when the encoding is not decoded (coverage flag)
 begin
     inst   = ins;
     opcode = inst[6:0];
@@ -202,6 +203,7 @@ begin
     o_rb  = "-";
     o_rd  = "-";
     o_imm = 32'b0;
+    unk   = 1'b0;
 
     if (inst[1:0] == 2'b11) begin
         //----------------------------------------------------------------------
@@ -249,7 +251,7 @@ begin
                     3'b101 : o_str = "bge";
                     3'b110 : o_str = "bltu";
                     3'b111 : o_str = "bgeu";
-                    default: o_str = "branch?";
+                    default: begin o_str = "branch?"; unk = 1'b1; end
                 endcase
             end
 
@@ -263,7 +265,7 @@ begin
                     3'b010 : o_str = "lw";
                     3'b100 : o_str = "lbu";
                     3'b101 : o_str = "lhu";
-                    default: o_str = "load?";
+                    default: begin o_str = "load?"; unk = 1'b1; end
                 endcase
             end
 
@@ -275,7 +277,7 @@ begin
                     3'b000 : o_str = "sb";
                     3'b001 : o_str = "sh";
                     3'b010 : o_str = "sw";
-                    default: o_str = "store?";
+                    default: begin o_str = "store?"; unk = 1'b1; end
                 endcase
             end
 
@@ -294,7 +296,7 @@ begin
                         o_imm = {27'b0, inst[24:20]};
                         o_str = inst[30] ? "srai" : "srli";
                     end
-                    default: o_str = "op-imm?";
+                    default: begin o_str = "op-imm?"; unk = 1'b1; end
                 endcase
             end
 
@@ -326,7 +328,7 @@ begin
                         4'b1_101 : o_str = "sra";
                         4'b0_110 : o_str = "or";
                         4'b0_111 : o_str = "and";
-                        default  : o_str = "op?";
+                        default  : begin o_str = "op?"; unk = 1'b1; end
                     endcase
                 end
             end
@@ -343,7 +345,7 @@ begin
                         32'h00100073 : o_str = "ebreak";
                         32'h30200073 : o_str = "mret";
                         32'h10500073 : o_str = "wfi";
-                        default      : o_str = "sys?";
+                        default      : begin o_str = "sys?"; unk = 1'b1; end
                     endcase
                 end
                 else begin
@@ -357,12 +359,12 @@ begin
                         3'b101 : o_str = "csrrwi";
                         3'b110 : o_str = "csrrsi";
                         3'b111 : o_str = "csrrci";
-                        default: o_str = "csr?";
+                        default: begin o_str = "csr?"; unk = 1'b1; end
                     endcase
                 end
             end
 
-            default : o_str = "illegal";
+            default : o_str = "illegal"; // unknown opcode: legitimately illegal
         endcase
     end
 `ifdef SCR1_RVC_EXT
@@ -371,8 +373,8 @@ begin
         // 16-bit compressed encodings (RV32C subset)
         //----------------------------------------------------------------------
         case (inst[1:0])
-            2'b00 : begin // Quadrant 0
-                case (funct3)
+                2'b00 : begin // Quadrant 0
+                    case (inst[15:13])
                     3'b000 : begin // c.addi4spn
                         o_str = "c.addi4spn";
                         o_rd  = get_regname_str_p(inst[4:2]);
@@ -390,12 +392,12 @@ begin
                         o_rb  = get_regname_str_p(inst[4:2]);
                         o_imm = {25'b0, inst[5], inst[12:10], inst[6], 2'b00};
                     end
-                    default : o_str = "c.q0?";
+                    default : begin o_str = "c.q0?"; unk = 1'b1; end
                 endcase
             end
 
-            2'b01 : begin // Quadrant 1
-                case (funct3)
+                2'b01 : begin // Quadrant 1
+                    case (inst[15:13])
                     3'b000 : begin // c.nop / c.addi
                         o_str = (rd == 5'd0) ? "c.nop" : "c.addi";
                         o_rd  = get_regname_str(rd);
@@ -436,7 +438,7 @@ begin
                                     3'b001 : o_str = "c.xor";
                                     3'b010 : o_str = "c.or";
                                     3'b011 : o_str = "c.and";
-                                    default: o_str = "c.alu?";
+                                    default: begin o_str = "c.alu?"; unk = 1'b1; end
                                 endcase
                             end
                         endcase
@@ -458,8 +460,8 @@ begin
                 endcase
             end
 
-            2'b10 : begin // Quadrant 2
-                case (funct3)
+                2'b10 : begin // Quadrant 2
+                    case (inst[15:13])
                     3'b000 : begin // c.slli
                         o_str = "c.slli";
                         o_rd  = get_regname_str(rd);
@@ -504,16 +506,16 @@ begin
                         o_rb  = get_regname_str(rs2);
                         o_imm = {24'b0, inst[8:7], inst[12:9], 2'b00};
                     end
-                    default : o_str = "c.q2?";
+                    default : begin o_str = "c.q2?"; unk = 1'b1; end
                 endcase
             end
 
-            default : o_str = "c?";
+            default : begin o_str = "c?"; unk = 1'b1; end
         endcase
     end
 `endif // SCR1_RVC_EXT
 
-    disasm = {o_str, o_ra, o_rb, o_rd, o_imm};
+    disasm = {unk, o_str, o_ra, o_rb, o_rd, o_imm};
 end
 endfunction
 
@@ -534,8 +536,8 @@ always_ff @(negedge rst_n, posedge clk) begin
     end
 end
 
-// Combinational decode result: {str[351:272], ra[271:192], rb[191:112], rd[111:32], imm[31:0]}
-wire [351:0] dec = disasm(instr_i, pc_ff);
+// Combinational decode result: {unk[352], str[351:272], ra[271:192], rb[191:112], rd[111:32], imm[31:0]}
+wire [352:0] dec = disasm(instr_i, pc_ff);
 
 // Human-readable one-line disassembly (packed ASCII), e.g. "addi 0x23, t0, sp"
 wire [383:0] txt = fmt_txt(dec[351:272], dec[271:192], dec[191:112], dec[111:32], dec[31:0]);
@@ -561,6 +563,7 @@ logic [4:0]  dbg_inst_rd_raw;                                // raw instr[11:7]
 logic [2:0]  dbg_inst_funct3;                                // raw instr[14:12]
 logic [6:0]  dbg_inst_funct7;                                // raw instr[31:25]
 logic [383:0] dbg_inst_txt;                                  // one-line disassembly (ASCII)
+logic        dbg_inst_unknown;                               // 1 = encoder not decoded (coverage)
 logic        dbg_inst_valid;                                 // Record valid
 
 always_ff @(negedge rst_n, posedge clk) begin
@@ -582,6 +585,7 @@ always_ff @(negedge rst_n, posedge clk) begin
         dbg_inst_funct3  <= '0;
         dbg_inst_funct7  <= '0;
         dbg_inst_txt     <= '0;
+        dbg_inst_unknown <= 1'b0;
         dbg_inst_valid   <= 1'b0;
     end else if (valid_i) begin
         dbg_inst_str     <= dec[351:272];
@@ -601,6 +605,7 @@ always_ff @(negedge rst_n, posedge clk) begin
         dbg_inst_funct3  <= instr_i[14:12];
         dbg_inst_funct7  <= instr_i[31:25];
         dbg_inst_txt     <= txt;
+        dbg_inst_unknown <= dec[352];
         dbg_inst_valid   <= 1'b1;
     end
 end

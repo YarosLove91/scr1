@@ -100,6 +100,30 @@ else
     override SIM_TRACE_DEF += SCR1_TRACE_DISASM_DIS
 endif
 
+# Use this parameter to enable the program execution text trace logger
+TRACE_LOGGER ?= 0
+# Output log file name (default scr1_trace.log in the run directory)
+TRACE_LOG_NAME ?= scr1_trace.log
+# Append the decoded mnemonic/operands next to the raw opcode
+TRACE_LOGGER_DISASM ?= 0
+# Append mcause/mepc/mtval/mtvec to trap lines
+TRACE_LOGGER_TRAP_DETAIL ?= 1
+
+ifeq ($(TRACE_LOGGER), 1)
+    override SIM_TRACE_DEF += SCR1_TRACE_LOGGER_EN
+    TRACE_LOG_DIR ?= $(CURDIR)/build/trace
+    TRACE_LOG_OPT = +TRACE_LOG=$(TRACE_LOG_DIR)/$(TRACE_LOG_NAME)
+    $(shell mkdir -p $(TRACE_LOG_DIR))
+    ifeq ($(TRACE_LOGGER_DISASM), 1)
+        override SIM_TRACE_DEF += SCR1_TRACE_LOGGER_DISASM_EN
+    endif
+    ifeq ($(TRACE_LOGGER_TRAP_DETAIL), 1)
+        override SIM_TRACE_DEF += SCR1_TRACE_LOGGER_TRAP_DETAIL_EN
+    endif
+else
+    TRACE_LOG_OPT =
+endif
+
 
 # Use this parameter to pass additional options for simulation build command
 SIM_BUILD_OPTS ?=
@@ -249,6 +273,7 @@ run_vcs: $(test_info)
 	$(bld_dir)/simv  -V \
 	+test_info=$(test_info) \
 	+test_results=$(test_results) \
+	$(TRACE_LOG_OPT) \
 	+imem_pattern=$(imem_pattern) \
 	+dmem_pattern=$(dmem_pattern) \
 	$(VCS_OPTS) | tee $(sim_results)  ;\
@@ -261,6 +286,7 @@ run_modelsim: $(test_info)
 	vsim -c -do "run -all" +nowarn3691 \
 	+test_info=$(test_info) \
 	+test_results=$(test_results) \
+	$(TRACE_LOG_OPT) \
 	+imem_pattern=$(imem_pattern) \
 	+dmem_pattern=$(dmem_pattern) \
 	work.$(top_module) \
@@ -278,6 +304,7 @@ run_ncsim: $(test_info)
 	-64bit \
 	+test_info=$(test_info) \
 	+test_results=$(test_results) \
+	$(TRACE_LOG_OPT) \
 	+imem_pattern=$(imem_pattern) \
 	+dmem_pattern=$(dmem_pattern) \
 	$(NCSIM_OPTS) | tee $(sim_results)  ;\
@@ -293,6 +320,7 @@ run_verilator: $(test_info)
 	$(bld_dir)/verilator/V$(top_module) \
 	+test_info=$(test_info) \
 	+test_results=$(test_results) \
+	$(TRACE_LOG_OPT) \
 	+imem_pattern=$(imem_pattern) \
 	+dmem_pattern=$(dmem_pattern) \
 	$(VERILATOR_OPTS) | tee -a $(sim_results) ;\
@@ -309,6 +337,7 @@ run_verilator_wf: $(test_info)
 	$(bld_dir)/verilator/V$(top_module) \
 	+test_info=$(test_info) \
 	+test_results=$(test_results) \
+	$(TRACE_LOG_OPT) \
 	+imem_pattern=$(imem_pattern) \
 	+dmem_pattern=$(dmem_pattern) \
 	$(VERILATOR_OPTS) | tee -a $(sim_results)  ;\

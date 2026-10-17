@@ -834,6 +834,36 @@ scr1_trace_disasm i_trace_disasm (
 );
 `endif // SCR1_TRACE_DISASM_EN
 
+//-------------------------------------------------------------------------------
+// Program execution text trace logger (simulation only, TRACE_LOGGER=1)
+//-------------------------------------------------------------------------------
+`ifdef SCR1_TRACE_LOGGER_EN
+scr1_trace_logger i_trace_logger (
+    .rst_n                          (pipe_rst_n                         ),
+    .clk                            (clk                                ),
+    .issue_vd_i                     (i_pipe_ifu.ifu2idu_vd_o & idu2ifu_rdy),
+    .issue_instr_i                  (i_pipe_ifu.ifu2idu_instr_o         ),
+    .redirect_i                     (new_pc_req                         ),
+    .redirect_pc_i                  (new_pc                             ),
+    .retire_i                       (instret                            ),
+    .retire_pc_i                    (curr_pc                            ),
+    .rd_wr_i                        (i_pipe_mprf.exu2mprf_w_req_i       ),
+    .rd_addr_i                      (i_pipe_mprf.exu2mprf_rd_addr_i     ),
+    .rd_data_i                      (i_pipe_mprf.exu2mprf_rd_data_i     ),
+    .exc_i                          (i_pipe_csr.e_exc                   ),
+    .irq_i                          (i_pipe_csr.e_irq                   ),
+`ifdef SCR1_RVC_EXT
+    .mepc_i                         ({i_pipe_csr.csr_mepc_next, 1'b0}   ),
+`else
+    .mepc_i                         ({i_pipe_csr.csr_mepc_next, 2'b00}  ),
+`endif
+    .mcause_ec_i                    (i_pipe_csr.csr_mcause_ec_next       ),
+    .mcause_irq_i                   (i_pipe_csr.csr_mcause_i_next        ),
+    .mtvec_i                        ({i_pipe_csr.csr_mtvec_base, 4'b0, 2'(i_pipe_csr.csr_mtvec_mode)}),
+    .mtval_i                        (i_pipe_csr.csr_mtval_next)
+);
+`endif // SCR1_TRACE_LOGGER_EN
+
 `endif // SCR1_TRGT_SIMULATION
 
 endmodule : scr1_pipe_top

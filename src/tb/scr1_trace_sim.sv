@@ -1,5 +1,5 @@
 /// Copyright by Syntacore LLC (c) 2016-2024. See LICENSE for details
-/// @file       <scr1_trace_disasm.sv>
+/// @file       <scr1_trace_sim.sv>
 /// @brief      Simulation instruction trace / disassembler (waveform / VCD)
 ///
 /// Analogous to biRISC-V biriscv_trace_sim.v: decodes a fetched instruction into
@@ -22,7 +22,7 @@
 
 `ifdef SCR1_TRGT_SIMULATION
 
-module scr1_trace_disasm (
+module scr1_trace_sim (
     input   logic                                 rst_n,         // Reset
     input   logic                                 clk,           // Clock
     input   logic                                 valid_i,       // Instruction accepted by IDU
@@ -57,16 +57,16 @@ end
 wire [352:0] dec = disasm(instr_i, pc_ff);
 
 // Human-readable one-line disassembly (packed ASCII), e.g. "addi 0x23, t0, sp"
-wire [383:0] txt = fmt_txt(dec[351:272], dec[271:192], dec[191:112], dec[111:32], dec[31:0]);
+wire [383:0] txt_str = fmt_txt(dec[351:272], dec[271:192], dec[191:112], dec[111:32], dec[31:0]);
 
 //------------------------------------------------------------------------------
 // Synchronous trace record: everything captured on one clock edge when the
 // instruction is accepted by the IDU. All dbg_inst_* switch together.
 //------------------------------------------------------------------------------
 logic [79:0] dbg_inst_str;                                   // Mnemonic
-logic [79:0] dbg_inst_ra;                                    // rs1 name
-logic [79:0] dbg_inst_rb;                                    // rs2 name
-logic [79:0] dbg_inst_rd;                                    // rd name
+logic [79:0] dbg_inst_ra_str;                                    // rs1 name
+logic [79:0] dbg_inst_rb_str;                                    // rs2 name
+logic [79:0] dbg_inst_rd_str;                                    // rd name
 logic [31:0] dbg_inst_imm;                                   // Immediate / target / csr
 logic [31:0] dbg_inst_pc;                                    // Instruction PC (byte-accurate)
 logic [31:0] dbg_inst_instr;                                 // Raw instruction
@@ -79,16 +79,16 @@ logic [4:0]  dbg_inst_rs2_raw;                               // raw instr[24:20]
 logic [4:0]  dbg_inst_rd_raw;                                // raw instr[11:7]
 logic [2:0]  dbg_inst_funct3;                                // raw instr[14:12]
 logic [6:0]  dbg_inst_funct7;                                // raw instr[31:25]
-logic [383:0] dbg_inst_txt;                                  // one-line disassembly (ASCII)
+logic [383:0] dbg_inst_txt_str;                                  // one-line disassembly (ASCII)
 logic        dbg_inst_unknown;                               // 1 = encoder not decoded (coverage)
 logic        dbg_inst_valid;                                 // Record valid
 
 always_ff @(negedge rst_n, posedge clk) begin
     if (~rst_n) begin
-        dbg_inst_str     <= "-";
-        dbg_inst_ra      <= "-";
-        dbg_inst_rb      <= "-";
-        dbg_inst_rd      <= "-";
+        dbg_inst_str     <= {10{8'h20}};
+        dbg_inst_ra_str      <= {10{8'h20}};
+        dbg_inst_rb_str      <= {10{8'h20}};
+        dbg_inst_rd_str      <= {10{8'h20}};
         dbg_inst_imm     <= '0;
         dbg_inst_pc      <= '0;
         dbg_inst_instr   <= '0;
@@ -101,14 +101,14 @@ always_ff @(negedge rst_n, posedge clk) begin
         dbg_inst_rd_raw  <= '0;
         dbg_inst_funct3  <= '0;
         dbg_inst_funct7  <= '0;
-        dbg_inst_txt     <= '0;
+        dbg_inst_txt_str     <= {48{8'h20}};
         dbg_inst_unknown <= 1'b0;
         dbg_inst_valid   <= 1'b0;
     end else if (valid_i) begin
-        dbg_inst_str     <= dec[351:272];
-        dbg_inst_ra      <= dec[271:192];
-        dbg_inst_rb      <= dec[191:112];
-        dbg_inst_rd      <= dec[111:32];
+        dbg_inst_str     <= vcd_name(dec[351:272]);
+        dbg_inst_ra_str      <= vcd_name(dec[271:192]);
+        dbg_inst_rb_str      <= vcd_name(dec[191:112]);
+        dbg_inst_rd_str      <= vcd_name(dec[111:32]);
         dbg_inst_imm     <= dec[31:0];
         dbg_inst_pc      <= pc_ff;
         dbg_inst_instr   <= instr_i;
@@ -121,12 +121,12 @@ always_ff @(negedge rst_n, posedge clk) begin
         dbg_inst_rd_raw  <= instr_i[11:7];
         dbg_inst_funct3  <= instr_i[14:12];
         dbg_inst_funct7  <= instr_i[31:25];
-        dbg_inst_txt     <= txt;
+        dbg_inst_txt_str     <= txt_str;
         dbg_inst_unknown <= dec[352];
         dbg_inst_valid   <= 1'b1;
     end
 end
 
-endmodule : scr1_trace_disasm
+endmodule : scr1_trace_sim
 
 `endif // SCR1_TRGT_SIMULATION

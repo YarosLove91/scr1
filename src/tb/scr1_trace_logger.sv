@@ -147,12 +147,12 @@ logic        ret_found;
 
 // Optional mnemonic/operands (DISASM_EN=1)
 wire [352:0] dec_ret = disasm(ret_instr, retire_pc_i);
-wire [383:0] dis_ret = fmt_txt(dec_ret[351:272], dec_ret[271:192], dec_ret[191:112],
+wire [383:0] dis_ret_str = fmt_txt(dec_ret[351:272], dec_ret[271:192], dec_ret[191:112],
                                dec_ret[111:32], dec_ret[31:0]);
 
 // Trap instruction decode (uses mepc as PC) - for trap details
 wire [352:0] dec_trap = disasm(ret_instr, mepc_i);
-wire [383:0] dis_trap = fmt_txt(dec_trap[351:272], dec_trap[271:192], dec_trap[191:112],
+wire [383:0] dis_trap_str = fmt_txt(dec_trap[351:272], dec_trap[271:192], dec_trap[191:112],
                                 dec_trap[111:32], dec_trap[31:0]);
 
 always_comb begin
@@ -247,7 +247,7 @@ always_ff @(negedge rst_n, posedge clk) begin
                 line = {line, $sformatf(" | mcause=0x%08h mepc=0x%08h mtval=0x%08h mtvec=0x%08h instr=0x%08h",
                                         mcause_val, mepc_i, mtval_i, mtvec_i, ret_instr)};
                 if (DISASM_EN && ret_found)
-                    line = {line, $sformatf(" (%s)", dis_trap)};
+                    line = {line, $sformatf(" (%s)", dis_trap_str)};
             end
             $fdisplay(trace_fd, "%s", rtrim(line));
         end
@@ -267,7 +267,7 @@ always_ff @(negedge rst_n, posedge clk) begin
             else
                 line = $sformatf("%10d %-10s %-10s %-20s %-8s", time_cnt, pc_str, op_str, rd_str, st_str);
             if (DISASM_EN)
-                line = {line, " | ", $sformatf("%s", dis_ret)};
+                line = {line, " | ", $sformatf("%s", dis_ret_str)};
             $fdisplay(trace_fd, "%s", rtrim(line));
         end
     end

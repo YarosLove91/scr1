@@ -61,6 +61,28 @@ begin
 end
 endfunction
 
+// Left-justify a packed ABI name and pad the rest with spaces (VCD readability)
+function automatic [79:0] ljust (input [79:0] v);
+    logic [79:0] o;
+    integer i, n;
+begin
+    n = 0;
+    for (i = 0; i < 10; i = i + 1)
+        if (v[8*i +: 8] != 8'h00) n = i + 1;
+    o = {10{8'h20}};
+    for (i = 0; i < n; i = i + 1)
+        o[79 - 8*i -: 8] = v[8*(n-1-i) +: 8];
+    ljust = o;
+end
+endfunction
+
+// VCD-friendly name: left-justified, space padded; unused operand ("-") -> blanks
+function automatic [79:0] vcd_name (input [79:0] v);
+begin
+    vcd_name = (v == {72'h0, 8'h2d}) ? {10{8'h20}} : ljust(v);
+end
+endfunction
+
 // ASCII char for a hex nibble ('0'..'9', 'a'..'f')
 function automatic [7:0] hexchar (input [3:0] n);
 begin
@@ -83,7 +105,7 @@ function automatic [383:0] fmt_txt (
     integer i;
     logic [7:0] ch;
 begin
-    obuf = '0;
+    obuf = {48{8'h20}};   // space padding (no NUL squares in a viewer)
     p   = 0;
 
     // mnemonic

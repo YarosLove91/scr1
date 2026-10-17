@@ -824,7 +824,7 @@ scr1_tracelog i_tracelog (
 // Instruction trace / disassembler (simulation only, TRACE_DISASM=1)
 //-------------------------------------------------------------------------------
 `ifdef SCR1_TRACE_DISASM_EN
-scr1_trace_disasm i_trace_disasm (
+scr1_trace_sim i_trace_sim (
     .rst_n                          (pipe_rst_n                         ),
     .clk                            (clk                                ),
     .valid_i                        (i_pipe_ifu.ifu2idu_vd_o & idu2ifu_rdy),

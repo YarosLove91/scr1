@@ -20,8 +20,8 @@ sc_puts(long str, long strlen) {
 #undef putchar
 int
 putchar(int ch) {
-	static __thread char buf[64] __attribute__((aligned(64)));
-    static __thread int buflen = 0;
+	static char buf[64] __attribute__((aligned(64)));
+    static int buflen = 0;
 
     buf[buflen++] = ch;
 

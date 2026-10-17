@@ -154,6 +154,9 @@ Makefile supports:
 * parameters for CUSTOM configuration - `ARCH = <IMC, IC, IM, I, EMC, EM, EC, E>, VECT_IRQ = <0, 1>, IPIC = <0, 1>, TCM = <0, 1>`
 * tests subset to run - `TARGETS = <hello, isr_sample, riscv_isa, riscv_compliance, riscv_arch, dhrystone21, coremark>`
 * enabling tracelog - `TRACE = <0, 1>`
+* waveform instruction trace (VCD) - `TRACE_DISASM = <0, 1>`
+* program execution text log - `TRACE_LOGGER = <0, 1>`
+* final architectural state dump (Verilator) - `STATE_DUMP = <0, 1>`, see `docs/STATE_DUMP.asciidoc`
 * and any additional options to pass to the simulator - `SIM_BUILD_OPTS`.
 
 Examples:

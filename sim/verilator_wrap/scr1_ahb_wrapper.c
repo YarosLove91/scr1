@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <verilated.h>
 #include "Vscr1_top_tb_ahb.h"
+#include "Vscr1_top_tb_ahb__Syms.h"
 #ifdef VCD_TRACE
 #include "verilated_vcd_c.h"
 #endif // #ifdef VCD_TRACE
@@ -9,12 +10,19 @@
 #define STRINGIFY(s) _STRINGIFY(s)
 #define _STRINGIFY(s) #s
 
+#define SCR1_STATE_TOP      scr1_top_tb_ahb
+#define SCR1_STATE_MODEL    Vscr1_top_tb_ahb
+#include "scr1_state_dump.h"
+
 Vscr1_top_tb_ahb *top;
 
 vluint64_t main_time = 0;
 
 int main(int argc, char** argv) {
+    int state_rc;
+
     Verilated::commandArgs(argc, argv);
+    scr1_state_dump_init(argc, argv);
 
     top = new Vscr1_top_tb_ahb;
 
@@ -34,7 +42,7 @@ int main(int argc, char** argv) {
 #endif // #ifdef VCD_FNAME
 #endif // #ifdef VCD_TRACE
 
-    while (!Verilated::gotFinish()) {
+    while (!Verilated::gotFinish() && !scr1_state_dump_should_stop()) {
         if ((main_time % 10) == 1) {
             top->clk = 1;
         }
@@ -42,6 +50,7 @@ int main(int argc, char** argv) {
             top->clk = 0;
         }
         top->eval();
+        scr1_state_dump_poll(top, main_time);
         main_time++;
 #ifdef VCD_TRACE
         tfp->dump(main_time);
@@ -51,6 +60,8 @@ int main(int argc, char** argv) {
 #ifdef VCD_TRACE
     tfp->close();
 #endif // #ifdef VCD_TRACE
+    state_rc = scr1_state_dump_finish(top, main_time);
     delete top;
+    return state_rc;
 }
 

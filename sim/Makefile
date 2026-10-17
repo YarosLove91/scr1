@@ -6,6 +6,7 @@ rtl_tb_files ?= ahb_tb.files
 rtl_inc_dir ?= $(root_dir)/src/includes
 rtl_inc_tb_dir ?= $(root_dir)/src/tb
 top_module ?= scr1_top_tb_ahb
+VCD_FNAME  ?= simx.vcd
 
 rtl_core_list := $(addprefix $(rtl_src_dir),$(shell cat $(rtl_src_dir)$(rtl_core_files)))
 rtl_top_list := $(addprefix $(rtl_src_dir),$(shell cat $(rtl_src_dir)$(rtl_top_files)))
@@ -120,7 +121,7 @@ build_verilator_wf: $(sv_list)
 	$(addprefix -D,$(SIM_TRACE_DEF)) \
 	-D$(SIM_CFG_DEF) \
 	-CFLAGS -DVCD_TRACE -CFLAGS -DTRACE_LVLV=20 \
-	-CFLAGS -DVCD_FNAME=simx.vcd \
+	-CFLAGS -DVCD_FNAME=$(VCD_FNAME) \
 	--clk clk \
 	--exe $(scr1_wrapper) \
 	--trace \

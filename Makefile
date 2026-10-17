@@ -301,9 +301,10 @@ run_verilator: $(test_info)
 	printf "$$(cat $(test_results)) \n"
 
 run_verilator_wf: $(test_info)
-	$(MAKE) -C $(root_dir)/sim build_verilator_wf SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
+	$(MAKE) -C $(root_dir)/sim build_verilator_wf SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)" VCD_FNAME=../trace/simx.vcd;
 	printf "" > $(test_results);
 	cd $(bld_dir); \
+	mkdir -p $(root_dir)/build/trace; \
 	echo $(top_module) | tee $(sim_results); \
 	$(bld_dir)/verilator/V$(top_module) \
 	+test_info=$(test_info) \

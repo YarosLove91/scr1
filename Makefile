@@ -124,6 +124,33 @@ else
     TRACE_LOG_OPT =
 endif
 
+# Dump the final architectural state (GPR/CSR) from the Verilator testbench
+STATE_DUMP ?= 0
+# Output file name (absolute paths are used as-is)
+STATE_FILE ?= scr1_final_state.txt
+# PC at which the snapshot is taken (default: SCR1_SIM_EXIT_ADDR); "none" disables
+FINAL_PC ?= 0xF8
+# Optional wrapper-side cycle limit; 0 disables
+MAX_CYCLES ?= 0
+
+ifeq ($(STATE_DUMP), 1)
+    STATE_LOG_DIR ?= $(CURDIR)/build/trace
+    ifeq ($(filter /%,$(STATE_FILE)),)
+        STATE_FILE_PATH := $(STATE_LOG_DIR)/$(STATE_FILE)
+    else
+        STATE_FILE_PATH := $(STATE_FILE)
+    endif
+    STATE_DUMP_OPT = +STATE_FILE=$(STATE_FILE_PATH) +FINAL_PC=$(FINAL_PC)
+    ifneq ($(MAX_CYCLES), 0)
+        STATE_DUMP_OPT += +MAX_CYCLES=$(MAX_CYCLES)
+    endif
+    $(shell mkdir -p $(STATE_LOG_DIR))
+else
+    STATE_DUMP_OPT =
+endif
+
+export STATE_DUMP
+
 
 # Use this parameter to pass additional options for simulation build command
 SIM_BUILD_OPTS ?=
@@ -154,7 +181,7 @@ endif
 export root_dir := $(shell pwd)
 export tst_dir  := $(root_dir)/sim/tests
 export inc_dir  := $(tst_dir)/common
-export bld_dir  := $(root_dir)/build/$(current_goal)_$(BUS)_$(CFG)_$(ARCH)_IPIC_$(IPIC)_TCM_$(TCM)_VIRQ_$(VECT_IRQ)_TRACE_$(TRACE)_DISASM_$(TRACE_DISASM)
+export bld_dir  := $(root_dir)/build/$(current_goal)_$(BUS)_$(CFG)_$(ARCH)_IPIC_$(IPIC)_TCM_$(TCM)_VIRQ_$(VECT_IRQ)_TRACE_$(TRACE)_DISASM_$(TRACE_DISASM)_STATE_$(STATE_DUMP)
 
 test_results := $(bld_dir)/test_results.txt
 test_info    := $(bld_dir)/test_info
@@ -333,6 +360,7 @@ run_verilator: $(test_info)
 	+test_info=$(test_info) \
 	+test_results=$(test_results) \
 	$(TRACE_LOG_OPT) \
+	$(STATE_DUMP_OPT) \
 	+imem_pattern=$(imem_pattern) \
 	+dmem_pattern=$(dmem_pattern) \
 	$(VERILATOR_OPTS) | tee -a $(sim_results) ;\
@@ -350,6 +378,7 @@ run_verilator_wf: $(test_info)
 	+test_info=$(test_info) \
 	+test_results=$(test_results) \
 	$(TRACE_LOG_OPT) \
+	$(STATE_DUMP_OPT) \
 	+imem_pattern=$(imem_pattern) \
 	+dmem_pattern=$(dmem_pattern) \
 	$(VERILATOR_OPTS) | tee -a $(sim_results)  ;\

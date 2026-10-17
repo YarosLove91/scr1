@@ -8,6 +8,27 @@ rtl_inc_tb_dir ?= $(root_dir)/src/tb
 top_module ?= scr1_top_tb_ahb
 VCD_FNAME  ?= simx.vcd
 
+STATE_DUMP ?= 0
+ifeq ($(STATE_DUMP), 1)
+    STATE_MISA := 0x40000000
+    ifneq (,$(findstring e,$(ARCH)))
+        STATE_MISA := $(shell printf '0x%08x' $$(( $(STATE_MISA) | 0x10 )))
+    else
+        STATE_MISA := $(shell printf '0x%08x' $$(( $(STATE_MISA) | 0x100 )))
+    endif
+    ifneq (,$(findstring c,$(ARCH)))
+        STATE_MISA := $(shell printf '0x%08x' $$(( $(STATE_MISA) | 0x4 )))
+    endif
+    ifneq (,$(findstring m,$(ARCH)))
+        STATE_MISA := $(shell printf '0x%08x' $$(( $(STATE_MISA) | 0x1000 )))
+    endif
+    SIM_STATE_CFLAGS := -CFLAGS -DSTATE_DUMP -CFLAGS -DSCR1_STATE_MISA=$(STATE_MISA)
+    SIM_STATE_PUBLIC := --public-flat-rw
+else
+    SIM_STATE_CFLAGS :=
+    SIM_STATE_PUBLIC :=
+endif
+
 rtl_core_list := $(addprefix $(rtl_src_dir),$(shell cat $(rtl_src_dir)$(rtl_core_files)))
 rtl_top_list := $(addprefix $(rtl_src_dir),$(shell cat $(rtl_src_dir)$(rtl_top_files)))
 rtl_tb_list := $(addprefix $(rtl_src_dir),$(shell cat $(rtl_src_dir)$(rtl_tb_files)))
@@ -93,11 +114,13 @@ build_verilator: $(sv_list)
 	-sv \
 	+1800-2017ext+sv \
 	-Wno-fatal \
+	$(SIM_STATE_PUBLIC) \
 	$(VERILATOR_5X_OPTS) \
 	--top-module $(top_module) \
 	-DSCR1_TRGT_SIMULATION \
 	$(addprefix -D,$(SIM_TRACE_DEF)) \
 	-D$(SIM_CFG_DEF) \
+	$(SIM_STATE_CFLAGS) \
 	--clk clk \
 	--exe $(scr1_wrapper) \
 	--Mdir $(bld_dir)/verilator \
@@ -115,6 +138,7 @@ build_verilator_wf: $(sv_list)
 	-sv \
 	+1800-2017ext+sv \
 	-Wno-fatal \
+	$(SIM_STATE_PUBLIC) \
 	$(VERILATOR_5X_OPTS) \
 	--top-module $(top_module) \
 	-DSCR1_TRGT_SIMULATION \
@@ -122,6 +146,7 @@ build_verilator_wf: $(sv_list)
 	-D$(SIM_CFG_DEF) \
 	-CFLAGS -DVCD_TRACE -CFLAGS -DTRACE_LVLV=20 \
 	-CFLAGS -DVCD_FNAME=$(VCD_FNAME) \
+	$(SIM_STATE_CFLAGS) \
 	--clk clk \
 	--exe $(scr1_wrapper) \
 	--trace \

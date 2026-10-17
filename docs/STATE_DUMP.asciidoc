@@ -1,0 +1,89 @@
+= SCR1 final architectural state dump
+:toc:
+:toclevels: 2
+
+Verilator-only feature: at the end of an RTL simulation the C++ testbench writes
+the architectural state of the core (32 GPRs, `priv`, and a CSR block) to a text
+file. The GPR section is byte-compatible with the Spike debugger `reg 0` output
+and with `__get_all_regs_from_spike_out` from `cascade-meta/fuzzer/common/spike.py`.
+
+The dump is independent of the waveform tracer (`TRACE_DISASM=1`) and the text
+logger (`TRACE_LOGGER=1`) and can be combined with either of them.
+
+== Activation
+
+[source,shell]
+----
+cd scr1
+export CROSS_PREFIX=<path-to-toolchain>/bin/riscv-none-elf-
+
+make TARGETS=fern run_verilator STATE_DUMP=1 CROSS_PREFIX=$CROSS_PREFIX
+----
+
+Variables:
+
+[cols="1,1,3"]
+|===
+| Variable | Default | Description
+
+| `STATE_DUMP` | `0` | Build the wrapper with `-DSTATE_DUMP` and add `--public-flat-rw`
+| `STATE_FILE` | `scr1_final_state.txt` | Output file in `build/trace/`; an absolute path is used as-is
+| `FINAL_PC` | `0xF8` | Snapshot PC (`SCR1_SIM_EXIT_ADDR`); `none` disables PC triggering
+| `MAX_CYCLES` | `0` | Optional wrapper-side cycle limit; `0` disables
+|===
+
+`STATE_FILE`, `FINAL_PC` and `MAX_CYCLES` are passed as Verilator plusargs
+(`+STATE_FILE=...`, `+FINAL_PC=...`, `+MAX_CYCLES=...`), so they can be changed
+without rebuilding.
+
+With the default `FINAL_PC=0xF8` the state is captured on every test exit and the
+file is written when the simulation terminates. For a multi-test run the last
+captured state (last test) is kept. To dump the state exactly at `$finish`
+instead, use `FINAL_PC=none`.
+
+The dump is also written on `SIGINT`/`SIGTERM` and when `MAX_CYCLES` is reached.
+
+== Output
+
+The file is written to `build/trace/` next to the VCD and text-log outputs, for example
+`build/trace/scr1_final_state.txt`. The directory is created automatically.
+
+[source,text]
+----
+# SCR1 final architectural state
+# sim_status: PASS
+# time: 8783491
+# pc: 0x000000f8
+zero: 0x00000000  ra: 0x00000336  sp: 0x00490000  gp: 0x00480cc0
+  tp: 0x0048fc00  t0: 0x000000f4  t1: 0x00480336  t2: 0x00000000
+  ...
+  t3: 0xf0000000  t4: 0xfffffffd  t5: 0xfffffffd  t6: 0xfffffffd
+priv M
+# CSR
+mstatus   0x00001880
+misa      0x40001104
+...
+minstreth 0x00000000
+----
+
+The GPR block is exactly 8 lines x 4 registers, each field formatted as
+`%4s: 0x%08x` with no separators (16 characters per field). This matches the
+fixed column offsets used by the Spike parser.
+
+`sim_status` is taken from the last line of `test_results.txt` (`PASS`/`__FAIL`).
+Additional values are `TIMEOUT` (wrapper cycle limit) and `SIGINT`/`SIGTERM`
+(terminated by a signal). `PASS` is used when no results file is available (for
+example a signature-only build). `EXCEPTION` is not classified automatically:
+tests that intentionally trap still finish normally and report `PASS`/`FAIL`.
+
+== Implementation notes
+
+* No RTL changes are required. The wrapper reads existing signals from the
+  Verilator model through `top->rootp`; `--public-flat-rw` keeps the needed
+  signals from being optimized away.
+* GPRs come from `i_pipe_mprf.mprf_int[1:31]`; `x0` is written as zero.
+* CSR values are composed from the registers in `i_pipe_csr` (`mstatus`, `mie`,
+  `mtvec`, `mscratch`, `mepc`, `mcause`, `mtval`, `mip`, `mhartid`, `mcycle`,
+  `minstret`). The CSR block is an extension and is not part of the Spike
+  `reg 0` format.
+* `misa` is computed from `ARCH` during the build (`0x40001104` for RV32IMC).

@@ -1,0 +1,216 @@
+= SCR1 trace: waveform tracer and program execution text logger
+:toc:
+:toclevels: 3
+
+Two simulation-only trace facilities for the SCR1 core. Both are pure
+observation (no outputs into the core, excluded from synthesis).
+
+[cols="2,2,3"]
+|===
+| Feature | Make flag | Output
+
+| Waveform disassembler (VCD signals)
+| `TRACE_DISASM=1`
+| `simx.vcd` (view with GTKWave/wavepeek)
+
+| Program execution text log
+| `TRACE_LOGGER=1`
+| `build/trace/<name>.log`
+
+| Optional mnemonic in the text log
+| `TRACE_LOGGER=1 TRACE_LOGGER_DISASM=1`
+| same log, extra `\| mnemonic ...` column
+
+| Trap details (mcause/mepc/mtval/mtvec + faulting instr)
+| `TRACE_LOGGER_TRAP_DETAIL=1` (default)
+| extra fields on `IRQ`/`EXC` lines
+|===
+
+== Branches
+
+* `feat/trace-disasm` - waveform tracer (`scr1_trace_sim`, VCD output).
+* `feat/program-trace-logger` - waveform tracer + program execution text logger.
+* `fix/tests-linking-longrun` - bare-metal tests (`fern`, `a5_1`, `conway`, `longrun`) and the
+  TLS/emutls link fixes; based on `master`.
+
+The bare-metal workloads are not part of the tracer branches.
+
+== Prerequisites
+
+* RISC-V toolchain (xPack, rv32imc multilib), e.g. GCC 15.2.0. Point `CROSS_PREFIX` at its
+  `bin/riscv-none-elf-` prefix (the toolchain lives outside this repository).
+* Verilator (5.x).
+* `dependencies/riscv-tests` initialised for the `riscv_isa` target:
+  `git submodule update --init dependencies/riscv-tests`
+* The testbench hardcodes `riscv64-unknown-elf-readelf` for identified tests
+  (arch/compliance). If only `riscv-none-elf-*` is available, add a symlink in
+  `PATH`, e.g. `~/.local/bin/riscv64-unknown-elf-readelf -> .../riscv-none-elf-readelf`.
+
+== Common invocation
+
+[source,bash]
+----
+cd scr1
+export CROSS_PREFIX=<path-to-toolchain>/bin/riscv-none-elf-
+----
+
+Pick a test with `TARGETS=...`. On the tracer branches the stock targets are available
+(`riscv_isa`, `isr_sample`, `riscv_compliance`, `riscv_arch`, `dhrystone21`, `coremark`).
+The bare-metal workloads `fern`, `a5_1`, `conway` and `longrun` are on
+`fix/tests-linking-longrun`.
+
+=== 1. Waveform trace (VCD)
+
+[source,bash]
+----
+make TARGETS=riscv_isa run_verilator_wf CROSS_PREFIX=$CROSS_PREFIX TRACE_DISASM=1
+----
+
+Output: `build/verilator_wf_AHB_MAX_imc_IPIC_1_TCM_1_VIRQ_1_TRACE_0_DISASM_1/simx.vcd`.
+
+Signals of interest (scope `...i_pipe_top.i_trace_sim`):
+
+* synchronous record: `dbg_inst_valid`, `dbg_inst_pc`, `dbg_inst_instr`,
+  `dbg_inst_opcode`, `dbg_inst_str`, `dbg_inst_ra_str/rb_str/rd_str`, `dbg_inst_imm`,
+  `dbg_inst_rs1_idx/rs2_idx/rd_idx`, `dbg_inst_rs1_raw/rs2_raw/rd_raw`,
+  `dbg_inst_funct3/funct7`, `dbg_inst_txt_str`, `dbg_inst_unknown`;
+* combinational (one stage earlier): `dec`, `txt`.
+
+The record is captured on the clock edge when the IDU accepts an instruction;
+`dbg_inst_pc` is byte-accurate (RVC aware).
+
+`wavepeek` example:
+
+[source,bash]
+----
+V=build/verilator_wf_..._DISASM_1/simx.vcd
+S=TOP.scr1_top_tb_ahb.i_top.i_core_top.i_pipe_top.i_trace_sim
+wavepeek value --waves $V --at 12022ps --signals \
+  $S.dbg_inst_pc $S.dbg_inst_str $S.dbg_inst_rd_str $S.dbg_inst_rd_idx
+----
+
+=== 2. Program execution text log
+
+[source,bash]
+----
+make TARGETS=isr_sample run_verilator CROSS_PREFIX=$CROSS_PREFIX \
+     TRACE_LOGGER=1 TRACE_LOG_NAME=isr_trace.log
+----
+
+Output: `build/trace/isr_trace.log` (directory auto-created).
+Default file name when `TRACE_LOG_NAME` is omitted: `scr1_trace.log`.
+
+Run-time override without recompilation: pass `+TRACE_LOG=<file>` to the
+simulator binary (the Makefile already forwards `TRACE_LOG_NAME` this way).
+
+=== 3. Text log with mnemonic (optional)
+
+[source,bash]
+----
+make TARGETS=isr_sample run_verilator CROSS_PREFIX=$CROSS_PREFIX \
+     TRACE_LOGGER=1 TRACE_LOGGER_DISASM=1 TRACE_LOG_NAME=isr_trace.log
+----
+
+Adds ` | <mnemonic> <operands>` after the `Status` column. Off by default, so
+the default log keeps the strict 5-column format.
+
+== Log format
+
+One line per retired instruction:
+
+[source,text]
+----
+<Cycle> <PC> <Opcode> <RD write> <Status>
+----
+
+Fixed widths, no trailing spaces:
+
+[cols="1,1,2,3"]
+|===
+| Field | Width | Format | Notes
+
+| Cycle | 10 (right) | `%10t` / `%10d` | cycle counter by default (see `TIME_MODE`)
+| PC | 10 (left) | `0x%08h` | byte-accurate; trap lines use `mepc`
+| Opcode | 10 (left) | `0x%08h` | raw instruction word; `0x--------` for trap events
+| RD write | 20 (left) | `x<N> = 0x%08h` | empty when no write, or `rd = x0`
+| Status | 8 (left) | `IRQ`/`EXC`/`MRET`/`SRET` | empty for normal instructions
+|===
+
+Details:
+
+* Trap events (`IRQ`, `EXC`) print `Opcode = 0x--------` and `PC = mepc`
+  (the interrupted/faulting instruction). Priority: `EXC > IRQ > MRET > SRET`.
+* `MRET`/`SRET` are detected from the instruction word (`0x30200073` /
+  `0x10200073`).
+* RVC: the opcode is the 16-bit instruction zero-extended to 32 bits; the PC
+  advances by 2.
+* Gaps in the `Cycle` column are normal (a line is written per retirement, not
+  per clock).
+
+Example (isr_sample):
+
+[source,text]
+----
+     Cycle PC         Opcode     RD write             Status
+         6 0x00000200 0x00000297 x5 = 0x00000200
+         8 0x00000208 0x30529073
+       297 0x000002b4 0x--------                      IRQ
+       326 0x00000398 0x30200073                      MRET
+----
+
+With `TRACE_LOGGER_DISASM=1`:
+
+[source,text]
+----
+         7 0x00000204 0xfc028293 x5 = 0x000001c0               | addi 0xffffffc0, t0, t0
+----
+
+Trap details (on by default via `TRACE_LOGGER_TRAP_DETAIL=1`): `IRQ`/`EXC` lines are extended
+with `mcause`, `mepc`, `mtval`, `mtvec` and the faulting/interrupted instruction word
+(`instr`), plus its mnemonic when `TRACE_LOGGER_DISASM=1`:
+
+[source,text]
+----
+       297 0x000002b4 0x--------                      IRQ      | mcause=0x80000007 mepc=0x000002b4 mtval=0x00000000 mtvec=0x000001c1 instr=0x00000000
+       351 0x00000300 0x--------                      IRQ      | mcause=0x8000000b mepc=0x00000300 mtval=0x00000000 mtvec=0x000001c1 instr=0x00000013 (addi 0x00000000, zero, zero)
+----
+
+Enable/disable with `TRACE_LOGGER_TRAP_DETAIL=0|1`.
+
+== Parameters (`src/tb/scr1_trace_logger.sv`)
+
+[cols="1,2,4"]
+|===
+| Parameter | Default | Meaning
+
+| `LOG_FILE` | `scr1_trace.log` | log file name (overridden by `+TRACE_LOG`)
+| `TIME_MODE` | `0` | `0` = internal cycle counter, `1` = `$time`
+| `TRACE_TRAP_DETAIL` | `1` via `TRACE_LOGGER_TRAP_DETAIL` | append `mcause/mepc/mtval/mtvec/instr` (+mnemonic) to trap lines
+| `DISASM_EN` | `0` | append mnemonic/operands (`TRACE_LOGGER_DISASM=1`)
+| `FIFO_DEPTH` | `16` | instruction FIFO depth (issue -> retire)
+|===
+
+`TIME_MODE=0` is the default because the SCR1 Verilator wrapper does not advance
+`$time` (the VCD is written with an explicit time argument); the stock
+`scr1_tracelog` uses a cycle counter for the same reason. Use `TIME_MODE=1` with
+simulators that do advance `$time`.
+
+== How it works (short)
+
+The raw instruction word is not carried through the SCR1 EXU. The logger
+therefore keeps a small FIFO of `{pc, instr}` pushed when the IDU accepts an
+instruction (with a byte-accurate PC tracked like the waveform tracer). On
+retirement (`exu2pipe_instret_o`, PC = `exu2pipe_pc_curr_o`) it finds the FIFO
+entry matching the retiring PC (skipping flushed wrong-path entries) and prints
+that instruction together with the MPRF write and the trap status.
+
+== Troubleshooting
+
+* `objcopy: No such file or directory` — `CROSS_PREFIX` is wrong; use the full
+  toolchain path.
+* `riscv64-unknown-elf-readelf: command not found` — add the symlink described
+  in Prerequisites (affects arch/compliance).
+* Log is not created — `TRACE_LOGGER=1` is required (and `TRACE_LOG_DIR` must be
+  writable; it is created automatically).
+* `Time`/`Cycle` all zeros — you are using `TIME_MODE=1` on a simulator that
+  does not advance `$time`; use `TIME_MODE=0`.

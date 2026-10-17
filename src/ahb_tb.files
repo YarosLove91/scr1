@@ -1,3 +1,6 @@
+includes/scr1_trace_decoder_pkg.sv
 core/pipeline/scr1_tracelog.sv
 tb/scr1_memory_tb_ahb.sv
 tb/scr1_top_tb_ahb.sv
+tb/scr1_trace_sim.sv
+tb/scr1_trace_logger.sv

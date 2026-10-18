@@ -166,6 +166,24 @@ Examples:
     make run_modelsim CFG=CUSTOM BUS=AXI ARCH=I VECT_IRQ=1 IPIC=1 TCM=0 TARGETS=isr_sample
 ```
 
+Trace/state examples:
+``` sh
+    make run_verilator    TARGETS="isr_sample a5_1" TRACE_LOGGER=1
+    make run_verilator_wf TARGETS="isr_sample a5_1" TRACE_DISASM=1
+    make run_verilator    TARGETS="isr_sample a5_1" STATE_DUMP=1
+```
+
+With the trace/state flags, each test in `TARGETS` writes its own files under
+`build/trace/`:
+
+* `<test>.vcd` - waveform (`TRACE_DISASM=1`, `run_verilator_wf`);
+* `<test>.log` - program execution text log (`TRACE_LOGGER=1`);
+* `<test>_state.txt` - final GPR/CSR state (`STATE_DUMP=1`).
+
+The testbench still runs the whole list as one simulation; the native
+`test_results.txt` and `sim_results.txt` remain per-run summaries. See
+`docs/TRACE_LOGGER.asciidoc` and `docs/STATE_DUMP.asciidoc` for details.
+
 Build and run parameters can be configured in the `./Makefile`.
 
 After all the tests have finished, the results can be found in `build/<SIM_CFG>/test_results.txt`.

@@ -7,12 +7,12 @@
 #include "verilated_vcd_c.h"
 #endif // #ifdef VCD_TRACE
 
-#define STRINGIFY(s) _STRINGIFY(s)
-#define _STRINGIFY(s) #s
-
 #define SCR1_STATE_TOP      scr1_top_tb_ahb
 #define SCR1_STATE_MODEL    Vscr1_top_tb_ahb
 #include "scr1_state_dump.h"
+#ifdef VCD_TRACE
+#include "scr1_vcd_per_test.h"
+#endif
 
 Vscr1_top_tb_ahb *top;
 
@@ -27,19 +27,8 @@ int main(int argc, char** argv) {
     top = new Vscr1_top_tb_ahb;
 
 #ifdef VCD_TRACE
-    Verilated::traceEverOn(true);
-    VerilatedVcdC* tfp = new VerilatedVcdC;
-#ifdef TRACE_LVLV
-    top->trace(tfp, TRACE_LVLV);
-#else
-    top->trace(tfp, 99);  // Trace 99 levels of hierarchy by default
-#endif // #ifdef TRACE_LVLV
-
-#ifdef VCD_FNAME
-    tfp->open(STRINGIFY(VCD_FNAME));
-#else
-    tfp->open("./simx.vcd");
-#endif // #ifdef VCD_FNAME
+    scr1_vcd_split_t vcd_split;
+    scr1_vcd_split_init(&vcd_split, top, argc, argv);
 #endif // #ifdef VCD_TRACE
 
     while (!Verilated::gotFinish() && !scr1_state_dump_should_stop()) {
@@ -53,12 +42,12 @@ int main(int argc, char** argv) {
         scr1_state_dump_poll(top, main_time);
         main_time++;
 #ifdef VCD_TRACE
-        tfp->dump(main_time);
+        scr1_vcd_split_tick(&vcd_split, top, main_time);
 #endif // #ifdef VCD_TRACE
     }
     top->final();
 #ifdef VCD_TRACE
-    tfp->close();
+    scr1_vcd_split_finish(&vcd_split, main_time);
 #endif // #ifdef VCD_TRACE
     state_rc = scr1_state_dump_finish(top, main_time);
     delete top;

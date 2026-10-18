@@ -5,7 +5,7 @@
 Simulation-only observation facilities for the SCR1 core. The waveform tracer and
 the text logger are pure observation (no outputs into the core, excluded from
 synthesis); the final state dump reads the model through the Verilator public
-interface and writes a snapshot at the end of the run.
+interface and writes one snapshot per test.
 
 [cols="2,2,3"]
 |===
@@ -13,11 +13,11 @@ interface and writes a snapshot at the end of the run.
 
 | Waveform disassembler (VCD signals)
 | `TRACE_DISASM=1`
-| `build/trace/simx.vcd` (view with Surfer/GTKWave/wavepeek)
+| `build/trace/<test>.vcd` (one per test)
 
 | Program execution text log
 | `TRACE_LOGGER=1`
-| `build/trace/<name>.log`
+| `build/trace/<test>.log` (one per test)
 
 | Optional mnemonic in the text log
 | `TRACE_LOGGER=1 TRACE_LOGGER_DISASM=1`
@@ -29,7 +29,11 @@ interface and writes a snapshot at the end of the run.
 
 | Final architectural state (GPR + CSR)
 | `STATE_DUMP=1`
-| `build/trace/scr1_final_state.txt` (see `docs/STATE_DUMP.asciidoc`)
+| `build/trace/<test>_state.txt` (see `docs/STATE_DUMP.asciidoc`)
+
+| Legacy tracelog (separate mechanism)
+| `TRACE=1`
+| one `build/<...>/tracelog_core_<hart>.log` per run, sections `# Test:`
 |===
 
 == Branches
@@ -40,11 +44,14 @@ branches are kept for reference:
 * `feat/trace-disasm` - waveform tracer (`scr1_trace_sim`, VCD output).
 * `feat/program-trace-logger` - waveform tracer + program execution text logger.
 * `feat/state-dump` - final architectural state dump (`scr1_state_dump.h`, `STATE_DUMP=1`).
+* `feat/per-test-traces` - one VCD, log and state file per test.
 * `fix/tests-linking-longrun` - bare-metal tests (`fern`, `a5_1`, `conway`, `longrun`) and the
   TLS/emutls link fixes.
 * `docs/maintenance` - ongoing documentation upkeep; merged back into `master`.
 
-All targets listed below are available on `master`.
+The per-test output layout described below is provided by `feat/per-test-traces`
+(and by `master` after that branch is merged); the underlying trace facilities
+are also available on `master`.
 
 == Prerequisites
 
@@ -68,6 +75,43 @@ export CROSS_PREFIX=<path-to-toolchain>/bin/riscv-none-elf-
 Pick a test with `TARGETS=...` (`riscv_isa`, `isr_sample`, `riscv_compliance`, `riscv_arch`,
 `dhrystone21`, `coremark`, plus the bare-metal `fern`, `a5_1`, `conway`, `longrun`).
 
+=== Per-test output
+
+Every test gets its own files in `build/trace/`:
+
+* `<test>.vcd` - waveform for that test (`TRACE_DISASM=1`, `run_verilator_wf`);
+* `<test>.log` - program execution text log for that test (`TRACE_LOGGER=1`);
+* `<test>_state.txt` - final GPR/CSR state for that test (`STATE_DUMP=1`).
+
+The testbench still runs the whole test list in one simulation (the normal
+`TARGETS="..."` batch run); the tracers split the outputs, so each test gets its
+own log and VCD. Combined log and VCD files are not produced by the new
+tracers (the legacy `TRACE=1` tracelog is a separate mechanism and still writes
+one combined file with `# Test:` sections). The native `test_results.txt` and
+`sim_results.txt` remain single per-run files.
+
+The test name is derived from the test file basename without the extension
+(`isr_sample.hex` -> `isr_sample`). Duplicate names receive a `_2`, `_3`, ...
+suffix. The directory is created automatically. The VCD directory can be
+overridden with `+VCD_DIR=<dir>`; the text log directory with
+`+TRACE_LOG_DIR=<dir>`.
+
+The per-test VCD files keep the global simulation timestamp. Each file starts
+after that test's reset (so it contains no records from the previous test) and
+ends at the exit PC (`0xF8`); the files are sequential in time with the reset
+gap between tests.
+
+All three facilities can be enabled together:
+
+[source,bash]
+----
+make TARGETS="isr_sample a5_1" run_verilator_wf CROSS_PREFIX=$CROSS_PREFIX \
+     TRACE_DISASM=1 TRACE_LOGGER=1 STATE_DUMP=1
+----
+
+This produces `isr_sample.vcd`, `isr_sample.log`, `isr_sample_state.txt`,
+`a5_1.vcd`, `a5_1.log`, and `a5_1_state.txt`.
+
 === 1. Waveform trace (VCD)
 
 [source,bash]
@@ -75,7 +119,8 @@ Pick a test with `TARGETS=...` (`riscv_isa`, `isr_sample`, `riscv_compliance`, `
 make TARGETS=riscv_isa run_verilator_wf CROSS_PREFIX=$CROSS_PREFIX TRACE_DISASM=1
 ----
 
-Output: `build/trace/simx.vcd` (the directory is created automatically).
+Output: `build/trace/<test>.vcd` for every test (the directory is created
+automatically).
 
 Signals of interest (scope `...i_pipe_top.i_trace_sim`):
 
@@ -92,7 +137,7 @@ The record is captured on the clock edge when the IDU accepts an instruction;
 
 [source,bash]
 ----
-V=build/trace/simx.vcd
+V=build/trace/isr_sample.vcd
 S=TOP.scr1_top_tb_ahb.i_top.i_core_top.i_pipe_top.i_trace_sim
 wavepeek value --waves $V --at 12022ps --signals \
   $S.dbg_inst_pc $S.dbg_inst_str $S.dbg_inst_rd_str $S.dbg_inst_rd_idx
@@ -102,22 +147,18 @@ wavepeek value --waves $V --at 12022ps --signals \
 
 [source,bash]
 ----
-make TARGETS=isr_sample run_verilator CROSS_PREFIX=$CROSS_PREFIX \
-     TRACE_LOGGER=1 TRACE_LOG_NAME=isr_trace.log
+make TARGETS=isr_sample run_verilator CROSS_PREFIX=$CROSS_PREFIX TRACE_LOGGER=1
 ----
 
-Output: `build/trace/isr_trace.log` (directory auto-created).
-Default file name when `TRACE_LOG_NAME` is omitted: `scr1_trace.log`.
-
-Run-time override without recompilation: pass `+TRACE_LOG=<file>` to the
-simulator binary (the Makefile already forwards `TRACE_LOG_NAME` this way).
+Output: `build/trace/<test>.log` for every test (directory auto-created).
+The output directory can be overridden at run time with `+TRACE_LOG_DIR=<dir>`.
 
 === 3. Text log with mnemonic (optional)
 
 [source,bash]
 ----
 make TARGETS=isr_sample run_verilator CROSS_PREFIX=$CROSS_PREFIX \
-     TRACE_LOGGER=1 TRACE_LOGGER_DISASM=1 TRACE_LOG_NAME=isr_trace.log
+     TRACE_LOGGER=1 TRACE_LOGGER_DISASM=1
 ----
 
 Adds ` | <mnemonic> <operands>` after the `Status` column. Off by default, so
@@ -125,10 +166,11 @@ the default log keeps the strict 5-column format.
 
 === 4. Final architectural state dump
 
-At the end of the simulation the Verilator wrapper can write the 32 GPRs, `priv`,
-and the SCR1 machine CSRs to `build/trace/scr1_final_state.txt`. The GPR block is
-compatible with the Spike debugger `reg 0` output. See `docs/STATE_DUMP.asciidoc`
-for the flags and file format.
+The Verilator wrapper writes the 32 GPRs, `priv`, and the SCR1 machine CSRs to
+`build/trace/<test>_state.txt` for every test in the list. The GPR block is
+compatible with the Spike debugger `reg 0` output. Without a test list a single
+fallback file is written. See `docs/STATE_DUMP.asciidoc` for `STATE_DIR`,
+`STATE_FILE`, `FINAL_PC`, and the file format.
 
 [source,bash]
 ----
@@ -204,7 +246,7 @@ Enable/disable with `TRACE_LOGGER_TRAP_DETAIL=0|1`.
 |===
 | Parameter | Default | Meaning
 
-| `LOG_FILE` | `scr1_trace.log` | log file name (overridden by `+TRACE_LOG`)
+| `LOG_FILE` | `scr1_trace.log` | fallback used to derive the output directory when `+TRACE_LOG_DIR` is absent
 | `TIME_MODE` | `0` | `0` = internal cycle counter, `1` = `$time`
 | `TRACE_TRAP_DETAIL` | `1` via `TRACE_LOGGER_TRAP_DETAIL` | append `mcause/mepc/mtval/mtvec/instr` (+mnemonic) to trap lines
 | `DISASM_EN` | `0` | append mnemonic/operands (`TRACE_LOGGER_DISASM=1`)
@@ -225,13 +267,23 @@ retirement (`exu2pipe_instret_o`, PC = `exu2pipe_pc_curr_o`) it finds the FIFO
 entry matching the retiring PC (skipping flushed wrong-path entries) and prints
 that instruction together with the MPRF write and the trap status.
 
+Per-test files: the tb publishes the current test name; the logger closes the
+previous log and opens `build/trace/<test>.log` when the name changes. The
+waveform wrapper starts a fresh VCD tracer for each test (a VCD tracer cannot be
+reopened with an earlier time base), using the test order from `test_info`. The
+VCD file is opened after that test's reset and closed at the exit PC (`0xF8`), so
+it contains no records from the previous test and no post-exit fetch. The state
+dump tracks the `test_running` tb signal, stores one snapshot per test, and writes
+all `<test>_state.txt` files when the simulation finishes.
+
 == Troubleshooting
 
 * `objcopy: No such file or directory` — `CROSS_PREFIX` is wrong; use the full
   toolchain path.
 * `riscv64-unknown-elf-readelf: command not found` — add the symlink described
   in Prerequisites (affects arch/compliance).
-* Log is not created — `TRACE_LOGGER=1` is required (and `TRACE_LOG_DIR` must be
-  writable; it is created automatically).
+* Log is not created — `TRACE_LOGGER=1` is required; each test writes
+  `build/trace/<test>.log` (the directory is created automatically and can be
+  overridden with `+TRACE_LOG_DIR`).
 * `Time`/`Cycle` all zeros — you are using `TIME_MODE=1` on a simulator that
   does not advance `$time`; use `TIME_MODE=0`.

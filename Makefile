@@ -100,10 +100,13 @@ else
     override SIM_TRACE_DEF += SCR1_TRACE_DISASM_DIS
 endif
 
+# Per-test trace directory (one file per test)
+VCD_DIR ?= $(CURDIR)/build/trace
+VCD_DIR_OPT = +VCD_DIR=$(VCD_DIR)
+$(shell mkdir -p $(VCD_DIR))
+
 # Use this parameter to enable the program execution text trace logger
 TRACE_LOGGER ?= 0
-# Output log file name (default scr1_trace.log in the run directory)
-TRACE_LOG_NAME ?= scr1_trace.log
 # Append the decoded mnemonic/operands next to the raw opcode
 TRACE_LOGGER_DISASM ?= 0
 # Append mcause/mepc/mtval/mtvec to trap lines
@@ -112,7 +115,7 @@ TRACE_LOGGER_TRAP_DETAIL ?= 1
 ifeq ($(TRACE_LOGGER), 1)
     override SIM_TRACE_DEF += SCR1_TRACE_LOGGER_EN
     TRACE_LOG_DIR ?= $(CURDIR)/build/trace
-    TRACE_LOG_OPT = +TRACE_LOG=$(TRACE_LOG_DIR)/$(TRACE_LOG_NAME)
+    TRACE_LOG_OPT = +TRACE_LOG_DIR=$(TRACE_LOG_DIR)
     $(shell mkdir -p $(TRACE_LOG_DIR))
     ifeq ($(TRACE_LOGGER_DISASM), 1)
         override SIM_TRACE_DEF += SCR1_TRACE_LOGGER_DISASM_EN
@@ -126,7 +129,9 @@ endif
 
 # Dump the final architectural state (GPR/CSR) from the Verilator testbench
 STATE_DUMP ?= 0
-# Output file name (absolute paths are used as-is)
+# Per-test state directory (files are <test>_state.txt)
+STATE_DIR ?= $(CURDIR)/build/trace
+# Fallback file name when no test_info is available
 STATE_FILE ?= scr1_final_state.txt
 # PC at which the snapshot is taken (default: SCR1_SIM_EXIT_ADDR); "none" disables
 FINAL_PC ?= 0xF8
@@ -134,17 +139,16 @@ FINAL_PC ?= 0xF8
 MAX_CYCLES ?= 0
 
 ifeq ($(STATE_DUMP), 1)
-    STATE_LOG_DIR ?= $(CURDIR)/build/trace
     ifeq ($(filter /%,$(STATE_FILE)),)
-        STATE_FILE_PATH := $(STATE_LOG_DIR)/$(STATE_FILE)
+        STATE_FILE_PATH := $(STATE_DIR)/$(STATE_FILE)
     else
         STATE_FILE_PATH := $(STATE_FILE)
     endif
-    STATE_DUMP_OPT = +STATE_FILE=$(STATE_FILE_PATH) +FINAL_PC=$(FINAL_PC)
+    STATE_DUMP_OPT = +STATE_DIR=$(STATE_DIR) +STATE_FILE=$(STATE_FILE_PATH) +FINAL_PC=$(FINAL_PC)
     ifneq ($(MAX_CYCLES), 0)
         STATE_DUMP_OPT += +MAX_CYCLES=$(MAX_CYCLES)
     endif
-    $(shell mkdir -p $(STATE_LOG_DIR))
+    $(shell mkdir -p $(STATE_DIR))
 else
     STATE_DUMP_OPT =
 endif
@@ -369,7 +373,7 @@ run_verilator: $(test_info)
 	printf "$$(cat $(test_results)) \n"
 
 run_verilator_wf: $(test_info)
-	$(MAKE) -C $(root_dir)/sim build_verilator_wf SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)" VCD_FNAME=../trace/simx.vcd;
+	$(MAKE) -C $(root_dir)/sim build_verilator_wf SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
 	printf "" > $(test_results);
 	cd $(bld_dir); \
 	mkdir -p $(root_dir)/build/trace; \
@@ -379,6 +383,7 @@ run_verilator_wf: $(test_info)
 	+test_results=$(test_results) \
 	$(TRACE_LOG_OPT) \
 	$(STATE_DUMP_OPT) \
+	$(VCD_DIR_OPT) \
 	+imem_pattern=$(imem_pattern) \
 	+dmem_pattern=$(dmem_pattern) \
 	$(VERILATOR_OPTS) | tee -a $(sim_results)  ;\

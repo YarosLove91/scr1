@@ -300,6 +300,9 @@ a5_1: | $(bld_dir)
 conway: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/conway EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 
+mcycle: | $(bld_dir)
+	$(MAKE) -C $(tst_dir)/mcycle EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
+
 longrun: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/longrun EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 

@@ -11,6 +11,10 @@
 
 #include <verilated.h>
 
+#include <string>
+#include <vector>
+#include <cctype>
+
 #ifndef SCR1_STATE_TOP
 #error "SCR1_STATE_TOP must be defined before including scr1_state_dump.h"
 #endif
@@ -55,7 +59,13 @@ typedef struct {
     uint64_t time;
 } scr1_state_snapshot_t;
 
+typedef struct {
+    scr1_state_snapshot_t snap;
+    int                   valid;
+} scr1_state_entry_t;
+
 static char scr1_state_file[SCR1_STATE_BUF] = SCR1_STATE_DEFAULT_FILE;
+static char scr1_state_dir[SCR1_STATE_BUF] = "build/trace";
 static char scr1_state_results[SCR1_STATE_BUF];
 static uint32_t scr1_state_final_pc = SCR1_STATE_DEFAULT_FINAL_PC;
 static uint64_t scr1_state_max_cycles = 0;
@@ -64,6 +74,11 @@ static volatile sig_atomic_t scr1_state_signal_num = 0;
 static volatile sig_atomic_t scr1_state_timeout = 0;
 static int scr1_state_have_snapshot = 0;
 static scr1_state_snapshot_t scr1_state_snapshot;
+static std::vector<std::string> scr1_state_tests;
+static std::vector<scr1_state_entry_t> scr1_state_entries;
+static size_t scr1_state_test_idx = 0;
+static int scr1_state_running_prev = 0;
+static std::vector<std::string> scr1_state_result_lines;
 
 static const char* scr1_state_plusarg(int argc, char** argv, const char* name) {
     size_t len = strlen(name);
@@ -75,6 +90,52 @@ static const char* scr1_state_plusarg(int argc, char** argv, const char* name) {
         if (arg[1 + len] == '\0') return arg + 1 + len;
     }
     return NULL;
+}
+
+static std::string scr1_state_basename(const std::string& path) {
+    size_t slash = path.find_last_of("/\\");
+    std::string name = (slash == std::string::npos) ? path : path.substr(slash + 1);
+    size_t dot = name.find_last_of('.');
+    if (dot != std::string::npos && dot != 0) name = name.substr(0, dot);
+    for (size_t i = 0; i < name.size(); ++i) {
+        unsigned char c = (unsigned char)name[i];
+        if (!isalnum(c) && c != '.' && c != '_' && c != '-') name[i] = '_';
+    }
+    if (name.empty()) name = "test";
+    return name;
+}
+
+static void scr1_state_load_tests(const char* path) {
+    FILE* fd;
+    char line[2048];
+    if (path == NULL) return;
+    fd = fopen(path, "r");
+    if (fd == NULL) return;
+    while (fgets(line, sizeof(line), fd) != NULL) {
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r' ||
+                           line[len - 1] == ' '  || line[len - 1] == '\t')) {
+            line[--len] = '\0';
+        }
+        if (len > 0) scr1_state_tests.push_back(std::string(line));
+    }
+    fclose(fd);
+}
+
+static void scr1_state_load_results(void) {
+    FILE* fd;
+    char line[2048];
+    if (scr1_state_results[0] == '\0') return;
+    fd = fopen(scr1_state_results, "r");
+    if (fd == NULL) return;
+    while (fgets(line, sizeof(line), fd) != NULL) {
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+            line[--len] = '\0';
+        }
+        if (len > 0) scr1_state_result_lines.push_back(std::string(line));
+    }
+    fclose(fd);
 }
 
 static void scr1_state_signal_handler(int sig) {
@@ -90,6 +151,12 @@ static void scr1_state_dump_init(int argc, char** argv) {
     if (value != NULL && value[0] != '\0') {
         strncpy(scr1_state_file, value, sizeof(scr1_state_file) - 1);
         scr1_state_file[sizeof(scr1_state_file) - 1] = '\0';
+    }
+
+    value = scr1_state_plusarg(argc, argv, "STATE_DIR");
+    if (value != NULL && value[0] != '\0') {
+        strncpy(scr1_state_dir, value, sizeof(scr1_state_dir) - 1);
+        scr1_state_dir[sizeof(scr1_state_dir) - 1] = '\0';
     }
 
     value = scr1_state_plusarg(argc, argv, "FINAL_PC");
@@ -112,6 +179,14 @@ static void scr1_state_dump_init(int argc, char** argv) {
         scr1_state_results[sizeof(scr1_state_results) - 1] = '\0';
     }
 
+    scr1_state_load_tests(scr1_state_plusarg(argc, argv, "test_info"));
+    scr1_state_entries.resize(scr1_state_tests.size());
+    for (size_t i = 0; i < scr1_state_entries.size(); ++i) {
+        scr1_state_entries[i].valid = 0;
+    }
+    scr1_state_test_idx = 0;
+    scr1_state_running_prev = 0;
+
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = scr1_state_signal_handler;
     sigemptyset(&sa.sa_mask);
@@ -124,9 +199,8 @@ static uint32_t scr1_state_gpr_word(SCR1_STATE_MODEL* top, int idx) {
     return (uint32_t)SCR1_STATE_PIPE(top, i_pipe_mprf__DOT__mprf_int)[31 - idx];
 }
 
-static void scr1_state_capture(SCR1_STATE_MODEL* top, vluint64_t time) {
-    scr1_state_snapshot_t* s = &scr1_state_snapshot;
-
+static void scr1_state_capture(SCR1_STATE_MODEL* top, vluint64_t time,
+                               scr1_state_snapshot_t* s) {
     for (int idx = 0; idx < 32; ++idx) {
         s->gpr[idx] = scr1_state_gpr_word(top, idx);
     }
@@ -152,57 +226,69 @@ static void scr1_state_capture(SCR1_STATE_MODEL* top, vluint64_t time) {
     s->minstret = (uint64_t)SCR1_STATE_PIPE(top, i_pipe_csr__DOT__csr_minstret);
     s->pc = (uint32_t)SCR1_STATE_PIPE(top, curr_pc);
     s->time = (uint64_t)time;
-
-    scr1_state_have_snapshot = 1;
 }
 
 static void scr1_state_dump_poll(SCR1_STATE_MODEL* top, vluint64_t time) {
+    int running;
+
     if (scr1_state_max_cycles != 0 && ((uint64_t)time / 10u) > scr1_state_max_cycles) {
         scr1_state_timeout = 1;
         return;
     }
-    if (scr1_state_final_pc == SCR1_STATE_NO_PC) return;
-    if ((uint32_t)SCR1_STATE_TB(top, rst_n) == 0) return;
-    if ((uint32_t)SCR1_STATE_PIPE(top, curr_pc) == scr1_state_final_pc) {
-        scr1_state_capture(top, time);
-    }
-}
 
-static const char* scr1_state_result_status(void) {
-    char line[512];
-    char last[512];
-    FILE* fd;
+    running = (int)(SCR1_STATE_TB(top, test_running)) & 1;
 
-    if (scr1_state_results[0] == '\0') return NULL;
-    fd = fopen(scr1_state_results, "r");
-    if (fd == NULL) return NULL;
-
-    last[0] = '\0';
-    while (fgets(line, sizeof(line), fd) != NULL) {
-        if (line[0] != '\0' && line[0] != '\n') {
-            strncpy(last, line, sizeof(last) - 1);
-            last[sizeof(last) - 1] = '\0';
+    if (running && !scr1_state_running_prev) {
+        if (scr1_state_test_idx < scr1_state_entries.size()) {
+            scr1_state_entries[scr1_state_test_idx].valid = 0;
         }
     }
-    fclose(fd);
 
-    if (strstr(last, "__FAIL") != NULL) return "FAIL";
-    if (strstr(last, "PASS") != NULL) return "PASS";
-    return NULL;
+    if ((scr1_state_final_pc != SCR1_STATE_NO_PC) &&
+        ((uint32_t)SCR1_STATE_TB(top, rst_n) != 0) &&
+        ((uint32_t)SCR1_STATE_PIPE(top, curr_pc) == scr1_state_final_pc)) {
+        if (scr1_state_test_idx < scr1_state_entries.size()) {
+            scr1_state_capture(top, time, &scr1_state_entries[scr1_state_test_idx].snap);
+            scr1_state_entries[scr1_state_test_idx].valid = 1;
+        } else {
+            scr1_state_capture(top, time, &scr1_state_snapshot);
+            scr1_state_have_snapshot = 1;
+        }
+    }
+
+    if (!running && scr1_state_running_prev) {
+        if (scr1_state_test_idx < scr1_state_entries.size()) {
+            if (!scr1_state_entries[scr1_state_test_idx].valid) {
+                scr1_state_capture(top, time, &scr1_state_entries[scr1_state_test_idx].snap);
+                scr1_state_entries[scr1_state_test_idx].valid = 1;
+            }
+            scr1_state_test_idx++;
+        }
+    }
+
+    scr1_state_running_prev = running;
 }
 
-static int scr1_state_write(const char* status) {
+static const char* scr1_state_status_for(size_t idx) {
+    if (idx < scr1_state_result_lines.size()) {
+        if (strstr(scr1_state_result_lines[idx].c_str(), "__FAIL") != NULL) return "FAIL";
+        if (strstr(scr1_state_result_lines[idx].c_str(), "PASS") != NULL) return "PASS";
+    }
+    return "PASS";
+}
+
+static int scr1_state_write(const char* path, const scr1_state_snapshot_t* s,
+                            const char* status) {
     static const char* abi_names[32] = {
         "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
         "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
         "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
         "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
     };
-    const scr1_state_snapshot_t* s = &scr1_state_snapshot;
-    FILE* fd = fopen(scr1_state_file, "w");
+    FILE* fd = fopen(path, "w");
 
     if (fd == NULL) {
-        fprintf(stderr, "ERROR: cannot open state file '%s'\n", scr1_state_file);
+        fprintf(stderr, "ERROR: cannot open state file '%s'\n", path);
         return 1;
     }
 
@@ -237,29 +323,56 @@ static int scr1_state_write(const char* status) {
     fprintf(fd, "%-9s 0x%08x\n", "minstreth", (uint32_t)(s->minstret >> 32));
 
     if (fclose(fd) != 0) {
-        fprintf(stderr, "ERROR: cannot write state file '%s'\n", scr1_state_file);
+        fprintf(stderr, "ERROR: cannot write state file '%s'\n", path);
         return 1;
     }
     return 0;
 }
 
 static int scr1_state_dump_finish(SCR1_STATE_MODEL* top, vluint64_t time) {
-    const char* status = NULL;
+    const char* status;
+    int rc = 0;
 
-    if (!scr1_state_have_snapshot) {
-        scr1_state_capture(top, time);
+    if (scr1_state_test_idx < scr1_state_entries.size() &&
+        !scr1_state_entries[scr1_state_test_idx].valid) {
+        scr1_state_capture(top, time, &scr1_state_entries[scr1_state_test_idx].snap);
+        scr1_state_entries[scr1_state_test_idx].valid = 1;
     }
 
+    scr1_state_load_results();
+
+    if (!scr1_state_tests.empty()) {
+        size_t last = scr1_state_tests.size() - 1;
+        for (size_t i = 0; i < scr1_state_tests.size(); ++i) {
+            std::string path;
+            std::string base;
+            const char* entry_status;
+
+            if (!scr1_state_entries[i].valid) continue;
+            base = scr1_state_basename(scr1_state_tests[i]);
+            path = std::string(scr1_state_dir) + "/" + base + "_state.txt";
+            entry_status = scr1_state_status_for(i);
+            if (i == last && scr1_state_sigint) {
+                entry_status = (scr1_state_signal_num == SIGTERM) ? "SIGTERM" : "SIGINT";
+            } else if (i == last && scr1_state_timeout) {
+                entry_status = "TIMEOUT";
+            }
+            rc |= scr1_state_write(path.c_str(), &scr1_state_entries[i].snap, entry_status);
+        }
+        return rc;
+    }
+
+    if (!scr1_state_have_snapshot) {
+        scr1_state_capture(top, time, &scr1_state_snapshot);
+        scr1_state_have_snapshot = 1;
+    }
+    status = scr1_state_status_for(0);
     if (scr1_state_sigint) {
         status = (scr1_state_signal_num == SIGTERM) ? "SIGTERM" : "SIGINT";
     } else if (scr1_state_timeout) {
         status = "TIMEOUT";
-    } else {
-        status = scr1_state_result_status();
-        if (status == NULL) status = "PASS";
     }
-
-    return scr1_state_write(status);
+    return scr1_state_write(scr1_state_file, &scr1_state_snapshot, status);
 }
 
 static int scr1_state_dump_should_stop(void) {

@@ -6,7 +6,6 @@ rtl_tb_files ?= ahb_tb.files
 rtl_inc_dir ?= $(root_dir)/src/includes
 rtl_inc_tb_dir ?= $(root_dir)/src/tb
 top_module ?= scr1_top_tb_ahb
-VCD_FNAME  ?= simx.vcd
 
 STATE_DUMP ?= 0
 ifeq ($(STATE_DUMP), 1)
@@ -28,6 +27,7 @@ else
     SIM_STATE_CFLAGS :=
     SIM_STATE_PUBLIC :=
 endif
+
 
 rtl_core_list := $(addprefix $(rtl_src_dir),$(shell cat $(rtl_src_dir)$(rtl_core_files)))
 rtl_top_list := $(addprefix $(rtl_src_dir),$(shell cat $(rtl_src_dir)$(rtl_top_files)))
@@ -138,6 +138,7 @@ build_verilator_wf: $(sv_list)
 	-sv \
 	+1800-2017ext+sv \
 	-Wno-fatal \
+	--public-flat-rw \
 	$(SIM_STATE_PUBLIC) \
 	$(VERILATOR_5X_OPTS) \
 	--top-module $(top_module) \
@@ -145,7 +146,6 @@ build_verilator_wf: $(sv_list)
 	$(addprefix -D,$(SIM_TRACE_DEF)) \
 	-D$(SIM_CFG_DEF) \
 	-CFLAGS -DVCD_TRACE -CFLAGS -DTRACE_LVLV=20 \
-	-CFLAGS -DVCD_FNAME=$(VCD_FNAME) \
 	$(SIM_STATE_CFLAGS) \
 	--clk clk \
 	--exe $(scr1_wrapper) \

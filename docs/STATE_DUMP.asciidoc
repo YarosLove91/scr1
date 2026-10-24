@@ -2,10 +2,12 @@
 :toc:
 :toclevels: 2
 
-Verilator-only feature: at the end of an RTL simulation the C++ testbench writes
-the architectural state of the core (32 GPRs, `priv`, and a CSR block) to a text
-file. The GPR section is byte-compatible with the Spike debugger `reg 0` output
-and with `__get_all_regs_from_spike_out` from `cascade-meta/fuzzer/common/spike.py`.
+Verilator-only feature: the C++ testbench writes the architectural state of the
+core (32 GPRs, `priv`, and a CSR block) to text files. With a test list, each
+test gets its own `<test>_state.txt`; without a test list a single fallback file
+is written. The GPR section is byte-compatible with the Spike debugger `reg 0`
+output and with `__get_all_regs_from_spike_out` from
+`cascade-meta/fuzzer/common/spike.py`.
 
 The dump is independent of the waveform tracer (`TRACE_DISASM=1`) and the text
 logger (`TRACE_LOGGER=1`) and can be combined with either of them.
@@ -27,26 +29,42 @@ Variables:
 | Variable | Default | Description
 
 | `STATE_DUMP` | `0` | Build the wrapper with `-DSTATE_DUMP` and add `--public-flat-rw`
-| `STATE_FILE` | `scr1_final_state.txt` | Output file in `build/trace/`; an absolute path is used as-is
+| `STATE_DIR` | `build/trace/` | Directory for per-test `<test>_state.txt` files
+| `STATE_FILE` | `scr1_final_state.txt` | Fallback file when no test list is available; an absolute path is used as-is
 | `FINAL_PC` | `0xF8` | Snapshot PC (`SCR1_SIM_EXIT_ADDR`); `none` disables PC triggering
 | `MAX_CYCLES` | `0` | Optional wrapper-side cycle limit; `0` disables
 |===
 
-`STATE_FILE`, `FINAL_PC` and `MAX_CYCLES` are passed as Verilator plusargs
-(`+STATE_FILE=...`, `+FINAL_PC=...`, `+MAX_CYCLES=...`), so they can be changed
-without rebuilding.
+`STATE_DIR`, `STATE_FILE`, `FINAL_PC` and `MAX_CYCLES` are passed as Verilator
+plusargs (`+STATE_DIR=...`, `+STATE_FILE=...`, `+FINAL_PC=...`, `+MAX_CYCLES=...`),
+so they can be changed without rebuilding.
 
-With the default `FINAL_PC=0xF8` the state is captured on every test exit and the
-file is written when the simulation terminates. For a multi-test run the last
-captured state (last test) is kept. To dump the state exactly at `$finish`
-instead, use `FINAL_PC=none`.
+With the default `FINAL_PC=0xF8` the state is captured on every test exit, and
+the files are written when the simulation terminates. One file per test from
+`test_info` is created (`<test>_state.txt`). Without `test_info` (manual run or
+a signature-only build), the single `STATE_FILE` is written. With
+`FINAL_PC=none` the snapshot is taken when each test ends instead of at the exit
+PC.
 
 The dump is also written on `SIGINT`/`SIGTERM` and when `MAX_CYCLES` is reached.
 
+=== Per-test behavior
+
+For every test listed in `test_info` the wrapper tracks the `test_running` tb
+signal and keeps one snapshot. With the default `FINAL_PC` the snapshot is taken
+when the test reaches the exit PC; with `FINAL_PC=none` it is taken at the end of
+the test. When the simulation finishes, the wrapper reads `test_results.txt` and
+writes one `<test>_state.txt` per test with the matching `sim_status`. Completed
+tests use their own result line; `SIGINT`, `SIGTERM`, and `TIMEOUT` are reported
+for the test that was running when the wrapper stopped.
+
 == Output
 
-The file is written to `build/trace/` next to the VCD and text-log outputs, for example
-`build/trace/scr1_final_state.txt`. The directory is created automatically.
+The per-test files are written to `build/trace/` next to the VCD and text-log
+outputs, for example `build/trace/isr_sample_state.txt` and
+`build/trace/a5_1_state.txt`. The directory is created automatically. The test
+name is the test file basename without the extension; duplicate names get a
+numeric suffix. The fallback file (no test list) is `build/trace/scr1_final_state.txt`.
 
 [source,text]
 ----
@@ -70,11 +88,12 @@ The GPR block is exactly 8 lines x 4 registers, each field formatted as
 `%4s: 0x%08x` with no separators (16 characters per field). This matches the
 fixed column offsets used by the Spike parser.
 
-`sim_status` is taken from the last line of `test_results.txt` (`PASS`/`__FAIL`).
-Additional values are `TIMEOUT` (wrapper cycle limit) and `SIGINT`/`SIGTERM`
-(terminated by a signal). `PASS` is used when no results file is available (for
-example a signature-only build). `EXCEPTION` is not classified automatically:
-tests that intentionally trap still finish normally and report `PASS`/`FAIL`.
+`sim_status` is taken from the matching line of `test_results.txt`
+(`PASS`/`__FAIL`). Additional values are `TIMEOUT` (wrapper cycle limit) and
+`SIGINT`/`SIGTERM` (terminated by a signal). `PASS` is used when no results file
+is available (for example a signature-only build). `EXCEPTION` is not classified
+automatically: tests that intentionally trap still finish normally and report
+`PASS`/`FAIL`.
 
 == Implementation notes
 
@@ -87,3 +106,8 @@ tests that intentionally trap still finish normally and report `PASS`/`FAIL`.
   `minstret`). The CSR block is an extension and is not part of the Spike
   `reg 0` format.
 * `misa` is computed from `ARCH` during the build (`0x40001104` for RV32IMC).
+* Per-test files are named from the `test_info` basename; `STATE_FILE` is only the
+  fallback when no test list is present. `STATE_DIR` defaults to `build/trace/`.
+* The current test is tracked with the `test_running` tb signal; the wrapper
+  snapshots at `FINAL_PC` (or at the test end) and writes all files at the end
+  of the simulation, after `test_results.txt` is closed.

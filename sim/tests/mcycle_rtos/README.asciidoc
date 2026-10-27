@@ -1,0 +1,127 @@
+= mcycle_rtos — C++/FreeRTOS дифференциальный стенд для SCR1 issue #80
+:toc:
+:sectnums:
+
+Контрпример для отработки *редуктора инструкций*: «классическая» C++17-программа
+под FreeRTOS (кооперативный режим), в середине исполнения которой находится
+репродуктор бага https://github.com/syntacore/scr1/issues/80[syntacore/scr1#80]
+(запись младшей половины `mcycle` ложно инкрементирует `mcycleh`).
+
+Один и тот же `mcycle_rtos.elf` исполняется на SCR1 (Verilator) и на эталонном
+Spike; финальное состояние и консоль сравниваются постфактум (oracle по
+финальным GPR/консоли, не пошаговый).
+
+== Структура
+
+[cols="1,2", options="header"]
+|===
+| Путь | Назначение
+
+| `app/app.cpp`, `app/app.hpp`
+| задачи и классы: `ComputeA` (FixedMatrix Q8 + LCG) → `Trigger` (#80 asm, метки
+`ml_trigger_start/end`) → `ComputeB` (RingBuffer + LCG) → `Reporter` (печать,
+`sc_exit`); golden-чексуммы `CHK_GOLDEN_A/B`
+
+| `app/main.cpp`
+| вход: создание задач/очередей, `mtvec` → trap-хендлер порта,
+`vTaskStartScheduler()`
+
+| `app/console.{h,cpp}`
+| вывод через SIM_PRINT `0xF0000000` (tb печатает `$write("%c")`)
+
+| `app/port_glue.c`
+| заглушка `vPortSetupTimerInterrupt()` (тика нет)
+
+| `FreeRTOSConfig.h`
+| кооперативный режим: `configUSE_PREEMPTION=0`,
+`configMTIME{,CMP}_BASE_ADDRESS=0` → детерминизм, идентичность на RTL и ISS
+
+| `vendor/FreeRTOS-Kernel/`
+| вендор-сабсет FreeRTOS-Kernel *V11.1.0* (MIT); будет заменён сабмодулем
+`dependencies/FreeRTOS-Kernel`
+
+| `Makefile`
+| сборка теста (C — через `common.mk`, C++ — своим правилом; `-lstdc++`,
+`--specs=nano.specs`)
+|===
+
+Сценарий сериализован очередями FreeRTOS → порядок исполнения детерминирован.
+Выход: `Reporter` → `sc_exit(rc)` → SIM_EXIT `0xF4` / SIM_STOP `0xF8`
+(`rc`: бит0 = баг #80, бит1 = golden mismatch).
+
+== Запуск
+
+=== SCR1 (Verilator)
+
+[source,bash]
+----
+cd scr1
+make run_verilator CFG=MAX BUS=AHB TARGETS=mcycle_rtos
+----
+
+Ожидание (баг жив): `mcycle_rtos.hex OK __FAIL`, в логе симуляции консоль:
+
+[source,text]
+----
+boot: mcycle_rtos, FreeRTOS V11.1.0 cooperative
+mcycle_rtos v1 (FreeRTOS cooperative; issue #80 trigger in the middle)
+chk_a   = 0x523ad7a9
+mcycle  = 0x0000000X        <- тайминговый, на сторонах различается
+mcycleh = 0x00000001        <- БАГ: должен быть 0
+chk_b   = 0x48fa9986
+checksum= 0x1ac04e2f
+BUG #80 reproduced: mcycleh spuriously changed
+----
+
+В docker-образе `scr1-spike-verif` монтируйте дерево *по тому же абсолютному
+пути*, что на хосте (build-каталоги Verilator содержат абсолютные пути
+`VERILATOR_ROOT`); хостовый и контейнерный `build/` не смешивать.
+
+=== Spike (эталон, тот же ELF)
+
+[source,bash]
+----
+spike --no-dm --disable-dtb --pc=0x200 --isa=rv32imc_zicsr_zifencei \
+  -m0x0:0x10000,0x480000:0x10000,0x490000:0x1000,0xf0000000:0x1000 \
+  -l --log-commits <build>/mcycle_rtos.elf 2>&1 \
+  | sed '/0x000000f8 (0x0000006f)/q' > spike_commits.log
+----
+
+Флаги: `--no-dm` — debug module Spike занимает `[0x0,0x1000)` (там `.text.init`,
+entry `0x200`); `--disable-dtb` — иначе boot ROM встанет на `0x1000`; карта `-m`:
+RAM 0x0:64K (`link_tcm.ld` `>TCM AT>RAM`, Spike грузит сегменты по *p_paddr*,
+`crt_tcm.S` сам перемещает код в TCM), TCM 0x480000:64K, mtime-TCSR 0x490000
+(crt пишет — на Spike безвредный RAM), outport 0xF0000000. Стоп — первая
+инструкция с PC `0xF8` (SIM_STOP `j .`).
+
+Консоль Spike восстанавливается из commit-лога: stores в `0xF0000000`
+(`mem 0xf0000000 0xNN` → байт NN). Ожидание: `mcycleh = 0x00000000`,
+`OK: mcycleh unchanged`, a0=0; `chk_a/chk_b/checksum` идентичны SCR1.
+
+=== Полный дифференциальный драйвер (2 прохода)
+
+`docker/scr1-spike/logs/mcycle-rtos/verify_rtos.sh` (barnsley): Verilator →
+Spike → golden из Spike вшивается в `app.hpp` → повторный прогон обеих сторон.
+Парсер commit-лога/GPR: `docker/scr1-spike/compare_state.py`.
+
+== Результаты верификации (2026-10-27)
+
+[cols="2,1,1", options="header"]
+|===
+| | SCR1 Verilator 5.052 | Spike master 2c300cd9
+
+| `mcycleh` после `csrw mcycle,0` | *1* (баг) | *0* (корректно)
+| a0 / итог | 1 → `__FAIL` | 0 → PASS
+| `chk_a`/`chk_b` | 0x523ad7a9 / 0x48fa9986 | идентичны
+|===
+
+DIFFERENTIAL CONFIRMED: расхождение — баг RTL (`scr1_pipe_csr.sv:908-909`, см.
+`docs/ISSUE80_MCYCLE.md` — патч внутри документа, НЕ применён).
+
+== Ground truth для редуктора
+
+* Статика: 3370 инструкций; триггер `0x004820ee..0x0048211a`, стат. индекс 2924.
+* Динамика: 336 694 коммита Spike; первое исполнение триггера — коммит 200 971 (59,7 %).
+* Метки `ml_trigger_start`/`ml_trigger_end` видны в `nm`/`objdump`.
+
+См. также `PROMTS/PROMT_REDUCER.md` (barnsley) — ТЗ пошаговой интеграции редуктора.

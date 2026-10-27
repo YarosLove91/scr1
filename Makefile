@@ -303,6 +303,9 @@ conway: | $(bld_dir)
 mcycle: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/mcycle EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 
+mcycle_rtos: | $(bld_dir)
+	$(MAKE) -C $(tst_dir)/mcycle_rtos EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
+
 longrun: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/longrun EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 

@@ -306,6 +306,9 @@ mcycle: | $(bld_dir)
 mcycle_rtos: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/mcycle_rtos EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 
+issue80_core: | $(bld_dir)
+	$(MAKE) -C $(tst_dir)/issue80_core EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
+
 longrun: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/longrun EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 

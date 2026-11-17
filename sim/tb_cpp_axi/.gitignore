@@ -1,0 +1,7 @@
+verilated/
+obj/
+obj_verilated/
+lib/
+build/
+*.vcd
+test.x

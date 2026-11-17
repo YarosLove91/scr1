@@ -1,0 +1,45 @@
+###############################################################################
+# Stage 1: Verilate scr1_top_ahb (DUT only - the C++ testbench replaces
+#          scr1_top_tb_ahb / scr1_memory_tb_ahb)
+###############################################################################
+TOP            ?= scr1_top_ahb
+OUTPUT_DIR     ?= verilated
+SRC_DIR        ?= ../../src
+SIM_CFG_DEF    ?= SCR1_CFG_RV32IMC_MAX
+SIM_TRACE_DEF  ?= SCR1_TRACE_LOG_DIS
+
+RTL_INCLUDE     = $(SRC_DIR)/includes
+
+# RTL file lists (same sources as the native flow minus the SV testbench)
+RTL_LIST       := $(addprefix $(SRC_DIR)/,$(shell cat $(SRC_DIR)/core.files))
+RTL_LIST       += $(addprefix $(SRC_DIR)/,$(shell cat $(SRC_DIR)/ahb_top.files))
+RTL_LIST       += $(SRC_DIR)/core/pipeline/scr1_tracelog.sv
+
+# Verilator options
+VERILATOR_OPTS ?= -Wno-fatal --no-timing --trace
+
+TARGETS         = $(OUTPUT_DIR)/V$(TOP).h
+
+###############################################################################
+# Rules
+###############################################################################
+.PHONY: all clean
+
+all: $(TARGETS)
+
+$(OUTPUT_DIR):
+	mkdir -p $@
+
+$(OUTPUT_DIR)/V$(TOP).h: $(RTL_LIST) | $(OUTPUT_DIR)
+	verilator --cc -sv +1800-2017ext+sv \
+		--top-module $(TOP) \
+		--Mdir $(OUTPUT_DIR) \
+		-I$(RTL_INCLUDE) \
+		-DSCR1_TRGT_SIMULATION \
+		-D$(SIM_TRACE_DEF) \
+		-D$(SIM_CFG_DEF) \
+		$(VERILATOR_OPTS) \
+		$(RTL_LIST)
+
+clean:
+	rm -rf $(OUTPUT_DIR)

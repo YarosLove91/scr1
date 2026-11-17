@@ -1,0 +1,60 @@
+###############################################################################
+# Stage 3: Build the C++ testbench and link against the verilated model
+###############################################################################
+TOP            ?= scr1_top_ahb
+VERILATOR_SRC  ?= $(shell verilator --getenv VERILATOR_ROOT)/include
+
+OBJ_DIR        ?= obj/
+EXE_DIR        ?= build/
+TARGET         ?= test.x
+
+# Additional include directories
+INCLUDE_PATH   ?=
+INCLUDE_PATH   += ./
+INCLUDE_PATH   += ./verilated
+INCLUDE_PATH   += $(VERILATOR_SRC)
+INCLUDE_PATH   += $(VERILATOR_SRC)/vltstd
+
+# Testbench config defines (match the RTL configuration):
+#   add -DTB_NO_IPIC for configs without SCR1_IPIC_EN
+#   add -DTB_NO_DBG  for configs without SCR1_DBG_EN
+TB_DEFINES     ?=
+
+# Flags
+CFLAGS         ?= -O2 -std=gnu++17
+CFLAGS         += -DVM_TRACE=1
+CFLAGS         += $(TB_DEFINES)
+CFLAGS         += $(patsubst %,-I%,$(INCLUDE_PATH))
+CFLAGS         += $(EXTRA_CFLAGS)
+
+LDFLAGS        ?= -O2
+
+# Verilated model archives (built by makefile.build_verilated)
+MODEL_LIBS      = ./verilated/libV$(TOP).a
+MODEL_LIBS     += ./verilated/V$(TOP)__ALL.a
+MODEL_LIBS     += ./verilated/libverilated.a
+
+LIBS            = $(MODEL_LIBS) -lelf
+
+# SRC / Object list
+SRC            := $(wildcard ./*.cpp)
+OBJ            := $(addprefix $(OBJ_DIR),$(patsubst %.cpp,%.o,$(notdir $(SRC))))
+
+###############################################################################
+# Rules
+###############################################################################
+.PHONY: all clean
+
+all: $(EXE_DIR)$(TARGET)
+
+$(OBJ_DIR) $(EXE_DIR):
+	mkdir -p $@
+
+$(OBJ_DIR)%.o: %.cpp | $(OBJ_DIR)
+	g++ $(CFLAGS) -c $< -o $@
+
+$(EXE_DIR)$(TARGET): $(OBJ) | $(EXE_DIR)
+	g++ $(LDFLAGS) $(OBJ) -o $@ $(LIBS)
+
+clean:
+	rm -rf $(OBJ_DIR) $(EXE_DIR)

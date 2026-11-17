@@ -9,6 +9,7 @@
 #include <riscv/processor.h>
 #include <riscv/decode.h>
 
+#include "abi_names.h"
 #include "boot_stub.h"
 #include "logger.h"
 #include "spike_ref.h"
@@ -426,12 +427,14 @@ void verifier::note_error(const retire_event &ev, const ref_commit &ref,
         char dut_rd[32], ref_rd[32], buf[512];
 
         if (ev.rd_wr)
-            snprintf(dut_rd, sizeof(dut_rd), "x%u=0x%08x", (unsigned)ev.rd, ev.rd_val);
+            snprintf(dut_rd, sizeof(dut_rd), "x%u(%s)=0x%08x",
+                     (unsigned)ev.rd, abi_name(ev.rd), ev.rd_val);
         else
             snprintf(dut_rd, sizeof(dut_rd), "-");
 
         if (ref.rd_wr)
-            snprintf(ref_rd, sizeof(ref_rd), "x%u=0x%08x", (unsigned)ref.rd, ref.rd_val);
+            snprintf(ref_rd, sizeof(ref_rd), "x%u(%s)=0x%08x",
+                     (unsigned)ref.rd, abi_name(ref.rd), ref.rd_val);
         else
             snprintf(ref_rd, sizeof(ref_rd), "-");
 
@@ -489,12 +492,14 @@ void verifier::print_iteration(const retire_event &ev, const ref_commit &ref,
     char dut_rd[32], ref_rd[32];
 
     if (ev.rd_wr)
-        snprintf(dut_rd, sizeof(dut_rd), "x%u=0x%08x", (unsigned)ev.rd, ev.rd_val);
+        snprintf(dut_rd, sizeof(dut_rd), "x%u(%s)=0x%08x",
+                 (unsigned)ev.rd, abi_name(ev.rd), ev.rd_val);
     else
         snprintf(dut_rd, sizeof(dut_rd), "-");
 
     if (ref.rd_wr)
-        snprintf(ref_rd, sizeof(ref_rd), "x%u=0x%08x", (unsigned)ref.rd, ref.rd_val);
+        snprintf(ref_rd, sizeof(ref_rd), "x%u(%s)=0x%08x",
+                 (unsigned)ref.rd, abi_name(ref.rd), ref.rd_val);
     else
         snprintf(ref_rd, sizeof(ref_rd), "-");
 

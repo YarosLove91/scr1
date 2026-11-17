@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <sstream>
 
+#include "abi_names.h"
 #include "logger.h"
 #include "state_dump.h"
 
@@ -15,14 +16,6 @@
 #ifndef SCR1_MEPC_SHIFT
 #define SCR1_MEPC_SHIFT 1
 #endif
-
-static const char *const g_abi_names[32] =
-{
-    "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
-    "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
-    "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
-    "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
-};
 
 //--------------------------------------------------------------------
 // capture: read GPRs and CSRs from the model internals
@@ -98,7 +91,7 @@ std::string state_dump::to_string(const scr1_state &st, const char *status, uint
         for (int col = 0; col < 4; ++col)
         {
             int idx = row * 4 + col;
-            ss << std::setfill(' ') << std::setw(4) << g_abi_names[idx] << ": 0x"
+            ss << std::setfill(' ') << std::setw(4) << abi_name((unsigned)idx) << ": 0x"
                << std::setfill('0') << std::setw(8) << st.gpr[idx];
         }
         ss << "\n";

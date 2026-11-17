@@ -230,6 +230,14 @@ llvm-snippy scr1_imc_random.yaml -o out/imc_random.elf   # PATH += ~/Work/TOOLS/
 Проверено: imc_random 1071 instr / 0 расхождений, loops_calls 2945 / 0
 (разница с пре-линкованными версиями = 55 инструкций crt-загрузки).
 
+**Автоопределение адресов snippy-секций.** Загрузчик читает
+сопутствующий `<name>.elf.ld` (llvm-snippy кладёт его рядом с ET_REL
+ELF): строки вида `.snippy.code.rx 0x3000 :` дают VMA секций; размеры
+берутся из `sh_size` ELF, stack top для boot-stub = `stack_base +
+stack_size`. При отсутствии `.ld` используется встроенная карта
+(`SNIPPY_*_BASE` в `elf_load.h`) с предупреждением `[!] snippy map ...
+not found`.
+
 ## 6. Анализ VCD (wavepeek)
 
 ```bash

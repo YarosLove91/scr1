@@ -204,6 +204,32 @@ Spike линкуется **in-process** (libriscv, `SPIKE_HOME ?= ~/Work/TOOLS/s
 - требуется сборка с `STATE_DUMP=1` (public-сигналы модели DUT)
 - сборка Spike: riscv-isa-sim + libfdt, `--prefix=$SPIKE_HOME`
 
+## 5b. Сырые snippy-тесты (без линковки)
+
+`test.x` принимает **сырой ET_REL ELF от llvm-snippy** напрямую — без
+crt/wrapper/link_snippy.ld:
+
+```bash
+llvm-snippy scr1_imc_random.yaml -o out/imc_random.elf   # PATH += ~/Work/TOOLS/snippy/build/bin
+./build/test.x -f ../tests/snippy/out/imc_random.elf --trace 0 --verify 1
+```
+
+Как это работает:
+- загрузчик распознаёт ET_REL и раскладывает секции по адресам генерации
+  (`.snippy.stack.rw` 0x1000, `.snippy.utility.rw` 0x2000,
+  `.snippy.code.rx` 0x3000, `.snippy.data.rw` 0x9000 — должны совпадать
+  с yaml); entry = символ `SnippyFunction`
+- TB синтезирует boot-stub по вектору сброса 0x200:
+  `lui sp/tp/gp, 0x2; jal ra, entry; li a0,0; j 0xF8` (+ слова
+  SIM_EXIT/SIM_STOP на 0xF4/0xF8)
+- тот же образ (секции + stub) прелоадится в Spike через bus.store,
+  pc ставится на 0x200 → lockstep 1:1, включая инструкции stub
+- ELF с релокациями (SHT_RELA) отклоняется — snippy генерирует
+  абсолютный код без них
+
+Проверено: imc_random 1071 instr / 0 расхождений, loops_calls 2945 / 0
+(разница с пре-линкованными версиями = 55 инструкций crt-загрузки).
+
 ## 6. Анализ VCD (wavepeek)
 
 ```bash

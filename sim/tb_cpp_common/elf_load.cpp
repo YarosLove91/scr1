@@ -20,10 +20,11 @@ elf_load::elf_load(const char *filename, mem_api *target)
     m_filename    = std::string(filename);
     m_target      = target;
     m_entry_point = 0;
+    m_relocatable = false;
 }
 
 //--------------------------------------------------------------------
-// load: Load ELF program segments (by LMA) to target
+// load: dispatch by ELF type
 //--------------------------------------------------------------------
 bool elf_load::load(void)
 {
@@ -37,7 +38,10 @@ bool elf_load::load(void)
         return false;
 
     if ((e = elf_begin(fd, ELF_C_READ, NULL)) == NULL)
+    {
+        close(fd);
         return false;
+    }
 
     if (elf_kind(e) != ELF_K_ELF)
     {
@@ -53,15 +57,32 @@ bool elf_load::load(void)
         close(fd);
         return false;
     }
-    m_entry_point = (uint32_t)ehdr.e_entry;
 
+    bool ok;
+    if (ehdr.e_type == ET_REL)
+    {
+        m_relocatable = true;
+        ok = load_sections(fd, e);
+    }
+    else
+    {
+        m_entry_point = (uint32_t)ehdr.e_entry;
+        ok = load_segments(fd, e);
+    }
+
+    elf_end(e);
+    close(fd);
+    return ok;
+}
+
+//--------------------------------------------------------------------
+// load_segments: ET_EXEC - load PT_LOAD segments at their LMA
+//--------------------------------------------------------------------
+bool elf_load::load_segments(int fd, Elf *e)
+{
     size_t phnum = 0;
     if (elf_getphdrnum(e, &phnum) != 0)
-    {
-        elf_end(e);
-        close(fd);
         return false;
-    }
 
     for (size_t i = 0; i < phnum; i++)
     {
@@ -88,8 +109,6 @@ bool elf_load::load(void)
         if (!m_target->create_memory(base, (uint32_t)phdr.p_filesz))
         {
             logger::inst().error("Cannot allocate memory region");
-            elf_end(e);
-            close(fd);
             return false;
         }
 
@@ -97,8 +116,6 @@ bool elf_load::load(void)
         if (pread(fd, buf.data(), phdr.p_filesz, phdr.p_offset) != (ssize_t)phdr.p_filesz)
         {
             logger::inst().error("Cannot read segment data");
-            elf_end(e);
-            close(fd);
             return false;
         }
 
@@ -113,21 +130,153 @@ bool elf_load::load(void)
                 ss << "Cannot write byte to 0x" << std::hex << std::setw(8)
                    << std::setfill('0') << load_addr;
                 logger::inst().error(ss.str());
-                elf_end(e);
-                close(fd);
                 return false;
             }
         }
     }
 
-    elf_end(e);
-    close(fd);
+    return true;
+}
+
+//--------------------------------------------------------------------
+// snippy_map: fixed section placement (matches the generation yaml /
+// link_snippy.ld conventions)
+//--------------------------------------------------------------------
+static bool snippy_map(const char *name, uint32_t &base)
+{
+    if (strcmp(name, ".snippy.stack.rw") == 0)   { base = SNIPPY_STACK_BASE; return true; }
+    if (strcmp(name, ".snippy.utility.rw") == 0) { base = SNIPPY_UTIL_BASE;  return true; }
+    if (strcmp(name, ".snippy.code.rx") == 0)    { base = SNIPPY_CODE_BASE;  return true; }
+    if (strcmp(name, ".snippy.data.rw") == 0)    { base = SNIPPY_DATA_BASE;  return true; }
+    return false;
+}
+
+//--------------------------------------------------------------------
+// load_sections: ET_REL (raw llvm-snippy output). Places allocated
+// PROGBITS sections at the snippy map addresses, records the chunks
+// for the reference model, and resolves SnippyFunction as the entry.
+//--------------------------------------------------------------------
+bool elf_load::load_sections(int fd, Elf *e)
+{
+    (void)fd;
+
+    GElf_Ehdr ehdr;
+    gelf_getehdr(e, &ehdr);
+
+    // Section bases for symbol resolution
+    uint32_t code_base = 0;
+    bool     have_code = false;
+
+    Elf_Scn *scn = NULL;
+    while ((scn = elf_nextscn(e, scn)) != NULL)
+    {
+        GElf_Shdr shdr;
+        if (gelf_getshdr(scn, &shdr) == NULL)
+            continue;
+
+        const char *name = elf_strptr(e, ehdr.e_shstrndx, shdr.sh_name);
+        if (name == NULL)
+            continue;
+
+        if ((shdr.sh_type == SHT_REL || shdr.sh_type == SHT_RELA) && shdr.sh_size != 0)
+        {
+            logger::inst().error(std::string("unsupported: raw ELF has relocations (") +
+                                 name + ") - use a fully linked image");
+            return false;
+        }
+
+        if (!(shdr.sh_flags & SHF_ALLOC) || shdr.sh_type != SHT_PROGBITS ||
+            shdr.sh_size == 0)
+            continue;   // NOBITS sections stay zero-filled
+
+        uint32_t base;
+        if (!snippy_map(name, base))
+            continue;   // .note.snippy and friends are not runtime image
+
+        if (base == SNIPPY_CODE_BASE)
+        {
+            code_base = base;
+            have_code = true;
+        }
+
+        Elf_Data *data = elf_getdata(scn, NULL);
+        if (data == NULL || data->d_buf == NULL)
+            return false;
+
+        if (!m_target->create_memory(base, (uint32_t)shdr.sh_size))
+        {
+            logger::inst().error("Cannot allocate memory region for " + std::string(name));
+            return false;
+        }
+
+        mem_patch patch;
+        patch.addr = base;
+        patch.data.resize(shdr.sh_size);
+        memcpy(patch.data.data(), data->d_buf, shdr.sh_size);
+
+        const uint8_t *src = patch.data.data();
+        for (size_t j = 0; j < shdr.sh_size; j++)
+        {
+            if (!m_target->valid_addr(base + (uint32_t)j))
+            {
+                std::ostringstream ss;
+                ss << "Cannot write byte to 0x" << std::hex << (base + (uint32_t)j);
+                logger::inst().error(ss.str());
+                return false;
+            }
+            m_target->write(base + (uint32_t)j, src[j]);
+        }
+        m_patches.push_back(std::move(patch));
+
+        std::ostringstream ss;
+        ss << "Memory: 0x" << std::hex << std::setw(8) << std::setfill('0') << base
+           << " - 0x" << std::setw(8) << (base + (uint32_t)shdr.sh_size - 1)
+           << std::dec << std::setfill(' ') << " (Size=" << (shdr.sh_size / 1024)
+           << "KB) [" << name << "]";
+        logger::inst().info(ss.str());
+    }
+
+    if (!have_code)
+    {
+        logger::inst().error("no .snippy.code.rx section in the raw ELF");
+        return false;
+    }
+
+    // Entry point: SnippyFunction symbol (section-relative)
+    m_entry_point = code_base;      // fallback: start of the code section
+    scn = NULL;
+    while ((scn = elf_nextscn(e, scn)) != NULL)
+    {
+        GElf_Shdr shdr;
+        if (gelf_getshdr(scn, &shdr) == NULL)
+            continue;
+        if (shdr.sh_type != SHT_SYMTAB)
+            continue;
+
+        Elf_Data *data = elf_getdata(scn, NULL);
+        if (data == NULL)
+            continue;
+
+        int count = (shdr.sh_entsize > 0) ? (int)(shdr.sh_size / shdr.sh_entsize) : 0;
+        for (int i = 0; i < count; i++)
+        {
+            GElf_Sym sym;
+            if (gelf_getsym(data, i, &sym) == NULL)
+                continue;
+            const char *sname = elf_strptr(e, shdr.sh_link, sym.st_name);
+            if (sname && strcmp(sname, "SnippyFunction") == 0)
+            {
+                m_entry_point = code_base + (uint32_t)sym.st_value;
+                break;
+            }
+        }
+    }
 
     return true;
 }
 
 //--------------------------------------------------------------------
-// get_symbol: Get symbol from ELF symbol table (libelf, no bfd)
+// get_symbol: get symbol from ELF symbol table (libelf, no bfd)
 //--------------------------------------------------------------------
 bool elf_load::get_symbol(const char *symname, uint32_t &value)
 {

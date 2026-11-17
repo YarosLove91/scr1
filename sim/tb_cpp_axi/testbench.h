@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "verilated.h"
 #if VM_TRACE
@@ -90,6 +91,9 @@ private:
     uint64_t m_cycle;
     uint32_t m_entry_point;
     uint32_t m_gp_sym;
+
+    // Preload image for the reference model (raw snippy ET_REL mode)
+    std::vector<mem_patch> m_spike_patches;
 
 #if VM_TRACE
     std::unique_ptr<VerilatedVcdC> m_tfp;

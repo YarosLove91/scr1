@@ -1,7 +1,9 @@
 #include <cstdlib>
 #include <iomanip>
+#include <sstream>
 #include <iostream>
 
+#include "boot_stub.h"
 #include "elf_load.h"
 #include "logger.h"
 #include "state_dump.h"
@@ -83,6 +85,31 @@ bool testbench::load_elf(const char *filename)
     m_entry_point = elf.get_entry_point();
     // C-family marker: crt sets gp = __global_pointer$ at startup
     elf.get_symbol("__global_pointer$", m_gp_sym);
+
+    m_spike_patches = elf.patches();
+    if (elf.is_relocatable())
+    {
+        // Raw snippy image: synthesize the boot wrapper at the reset
+        // vector and mirror everything into the reference model patches
+        for (const auto &w : make_boot_stub(m_entry_point))
+        {
+            mem_patch p;
+            p.addr = w.addr;
+            p.data.resize(4);
+            for (int b = 0; b < 4; b++)
+            {
+                uint8_t byte = (uint8_t)(w.word >> (8 * b));
+                m_mem.write(w.addr + (uint32_t)b, byte);
+                p.data[b] = byte;
+            }
+            m_spike_patches.push_back(std::move(p));
+        }
+
+        std::ostringstream ss;
+        ss << "Snippy mode: boot wrapper at 0x200, entry=0x"
+           << std::hex << std::setw(8) << std::setfill('0') << m_entry_point;
+        logger::inst().info(ss.str());
+    }
     return true;
 }
 
@@ -327,7 +354,8 @@ bool testbench::trace_log_enable(const char *path)
 bool testbench::verify_enable(verify_mode mode, const char *elf,
                               const char *isa)
 {
-    if (!m_verify.enable(mode, elf, isa))
+    if (!m_verify.enable(mode, elf, isa,
+                         m_spike_patches.empty() ? NULL : &m_spike_patches))
         return false;
     if (m_verify.active())
         m_trace.set_listener(&m_verify);

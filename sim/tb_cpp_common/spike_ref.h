@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "mem_api.h"
 #include "trace_logger.h"
 
 //--------------------------------------------------------------------
@@ -43,7 +44,11 @@ public:
     spike_ref();
     ~spike_ref();
 
-    bool start(const char *elf, const char *isa);
+    // patches != NULL: raw image mode - bypass Spike's ELF loader (it
+    // cannot consume ET_REL), preload the chunks via the bus and start
+    // at the SCR1 reset vector (boot wrapper)
+    bool start(const char *elf, const char *isa,
+               const std::vector<mem_patch> *patches = NULL);
     void stop(void);
     bool is_running(void) const;
 
@@ -73,7 +78,8 @@ public:
     verifier();
     ~verifier();
 
-    bool enable(verify_mode mode, const char *elf, const char *isa);
+    bool enable(verify_mode mode, const char *elf, const char *isa,
+                const std::vector<mem_patch> *patches = NULL);
     bool        active(void) const  { return m_mode != verify_mode::OFF; }
     verify_mode mode(void) const    { return m_mode; }
 

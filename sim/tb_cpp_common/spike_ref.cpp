@@ -9,6 +9,7 @@
 #include <riscv/processor.h>
 #include <riscv/decode.h>
 
+#include "boot_stub.h"
 #include "logger.h"
 #include "spike_ref.h"
 
@@ -108,7 +109,8 @@ spike_ref::~spike_ref()
 // start: build the reference platform and load the ELF (by LMA,
 // same as the DUT loader)
 //--------------------------------------------------------------------
-bool spike_ref::start(const char *elf, const char *isa)
+bool spike_ref::start(const char *elf, const char *isa,
+                      const std::vector<mem_patch> *patches)
 {
     stop();
 
@@ -139,7 +141,13 @@ bool spike_ref::start(const char *elf, const char *isa)
     }
 
     std::vector<std::string> htif_args;
-    htif_args.push_back(std::string(elf));
+    // Raw image mode: do NOT give the ELF to htif (it asserts on ET_REL).
+    // "none" keeps htif happy without loading anything; the image is
+    // preloaded through the bus after construction.
+    if ((patches == NULL) || patches->empty())
+        htif_args.push_back(std::string(elf));
+    else
+        htif_args.push_back(std::string("none"));
 
     try
     {
@@ -167,21 +175,42 @@ bool spike_ref::start(const char *elf, const char *isa)
         return false;
     }
 
-    // Load the ELF into the reference memory and start at its entry point
-    try
-    {
-        m_impl->sim->tb_start();
-    }
-    catch (const std::exception &e)
-    {
-        m_error = std::string("start: ") + e.what();
-        logger::inst().error("spike: " + m_error);
-        stop();
-        return false;
-    }
-
     m_impl->core  = m_impl->sim->get_core(0);
     m_impl->state = m_impl->core->get_state();
+
+    if ((patches != NULL) && !patches->empty())
+    {
+        // Raw image mode (ET_REL snippy): preload the chunks through the
+        // bus and start at the reset vector where the boot wrapper lives
+        bus_t &bus = const_cast<bus_t &>(m_impl->sim->get_bus());
+        for (const auto &p : *patches)
+        {
+            if (!bus.store(p.addr, p.data.size(), p.data.data()))
+            {
+                m_error = "preload: bus store failed";
+                logger::inst().error("spike: " + m_error);
+                stop();
+                return false;
+            }
+        }
+        m_impl->core->reset();
+        m_impl->state->pc = BOOT_STUB_BASE;
+    }
+    else
+    {
+        // Load the ELF via htif and start at its entry point
+        try
+        {
+            m_impl->sim->tb_start();
+        }
+        catch (const std::exception &e)
+        {
+            m_error = std::string("start: ") + e.what();
+            logger::inst().error("spike: " + m_error);
+            stop();
+            return false;
+        }
+    }
 
     // Record per-instruction register writebacks (state->log_reg_write);
     // the text commit log goes to /dev/null (see log_path above)
@@ -317,7 +346,8 @@ bool verifier::set_verbose_file(const char *path)
 //--------------------------------------------------------------------
 // enable
 //--------------------------------------------------------------------
-bool verifier::enable(verify_mode mode, const char *elf, const char *isa)
+bool verifier::enable(verify_mode mode, const char *elf, const char *isa,
+                      const std::vector<mem_patch> *patches)
 {
     m_mode = mode;
     if (m_mode == verify_mode::OFF)
@@ -328,7 +358,7 @@ bool verifier::enable(verify_mode mode, const char *elf, const char *isa)
     m_mode = verify_mode::OFF;
     return false;
 #else
-    if (!m_spike.start(elf, isa))
+    if (!m_spike.start(elf, isa, patches))
     {
         logger::inst().error("cannot start the in-process Spike model: " + m_spike.error());
         m_mode = verify_mode::OFF;

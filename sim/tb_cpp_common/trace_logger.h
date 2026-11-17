@@ -47,6 +47,39 @@ struct trace_inputs
 };
 
 //--------------------------------------------------------------------
+// retire_event: one retired (committed) instruction of the DUT,
+// including instructions that took an exception (instret semantics:
+// "retired with or without exception").
+//--------------------------------------------------------------------
+struct retire_event
+{
+    uint64_t cycle;
+    uint32_t pc;
+    uint32_t instr;
+    bool     rd_wr;       // architectural GPR write (rd != x0)
+    uint8_t  rd;
+    uint32_t rd_val;
+    bool     exc;         // instruction took an exception
+
+    retire_event()
+    {
+        cycle = 0; pc = 0; instr = 0;
+        rd_wr = false; rd = 0; rd_val = 0; exc = false;
+    }
+};
+
+//--------------------------------------------------------------------
+// trace_retire_listener: observer of the retirement stream
+// (used by the Spike reference verifier)
+//--------------------------------------------------------------------
+class trace_retire_listener
+{
+public:
+    virtual ~trace_retire_listener() {}
+    virtual void on_retire(const retire_event &ev) = 0;
+};
+
+//--------------------------------------------------------------------
 // trace_logger: C++ reproduction of scr1_trace_logger.sv.
 // One text line per retired instruction:
 //   <Cycle> <PC> <Opcode> <RD write> <Status>
@@ -67,6 +100,11 @@ public:
     void close(void);
     bool is_open(void) const { return m_file != NULL; }
 
+    // Retirement listener (reference model verification)
+    void set_listener(trace_retire_listener *l) { m_listener = l; }
+    // True when either the log file or a listener needs the events
+    bool events_enabled(void) const { return (m_file != NULL) || (m_listener != NULL); }
+
     // Capture the sampled internals from the verilated model
     static void capture(dut_top_t *top, trace_inputs &in);
 
@@ -82,6 +120,7 @@ private:
                    const char *rd, const char *st, const char *extra);
 
     FILE    *m_file;
+    trace_retire_listener *m_listener;
     uint64_t m_time_cnt;
     // Byte-accurate PC of the instruction accepted by the IDU
     uint32_t m_pc_ff;

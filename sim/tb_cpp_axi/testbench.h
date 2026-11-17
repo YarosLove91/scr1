@@ -13,6 +13,7 @@
 #include "Vscr1_top_axi.h"
 #include "tb_axi_mem.h"
 #include "trace_logger.h"
+#include "spike_ref.h"
 
 struct scr1_state;
 
@@ -35,6 +36,7 @@ public:
     ~testbench();
 
     bool load_elf(const char *filename);
+    // Returns 0 on test exit, 1 on timeout, 2 on verification failure
     int  run(uint64_t max_cycles = DEFAULT_MAX_CYCLES);
     void abort(void);
 
@@ -54,6 +56,16 @@ public:
     bool trace_log_enable(const char *path);
     bool trace_log_enabled(void) const { return m_trace.is_open(); }
 
+    // Spike reference model verification (OFF/INCREMENTAL/BATCH)
+    bool verify_enable(verify_mode mode, const char *elf, const char *isa,
+                       const char *spike_path);
+    bool verify_set_log(const char *path)  { return m_verify.set_verbose_file(path); }
+    bool     verify_active(void) const     { return m_verify.active(); }
+    bool     verify_failed(void) const     { return m_verify.failed(); }
+    uint64_t verify_finish(void)           { return m_verify.finish(); }
+    uint64_t verify_compared(void) const   { return m_verify.compared(); }
+    uint64_t verify_mismatches(void) const { return m_verify.mismatches(); }
+
 private:
     void tick(void);
     void dump(void);
@@ -65,6 +77,7 @@ private:
     tb_axi_mem                     m_mem;
     trace_logger                   m_trace;
     trace_inputs                   m_trace_in;
+    verifier                       m_verify;
 
     uint64_t m_time;            // ns
     uint64_t m_cycle;

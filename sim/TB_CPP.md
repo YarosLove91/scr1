@@ -116,8 +116,13 @@ make run TEST_IMAGE=<path.elf> RUN_OPTS="--trace 0"     # через make
 | `-S, --state 0\|1` | дамп GPR/CSR в лог в конце прогона |
 | `-F, --state_file F` | дамп GPR/CSR в файл (формат scr1_final_state.txt) |
 | `-L, --trace_log F` | построчный трейс выполнения (инструкция на ретайр) |
+| `-V, --verify 0\|1\|2` | верификация со Spike: 0=выкл, 1=инкрементальная, 2=пакетная |
+| `-v, --verbose` | печатать каждую итерацию сверки (DUT vs REF → OK/причина) |
+| `-P, --spike PATH` | путь к бинарнику Spike (default: `$SPIKE` или `spike` из PATH) |
+| `-I, --isa STR` | ISA для Spike (default `rv32imc_zicsr_zifencei`) |
 
-Env: `ENABLE_WAVES=no` (без VCD), `WAVES_DELAY_US=N`, `NO_COLOR=1`, `SEED=N`.
+Env: `ENABLE_WAVES=no` (без VCD), `WAVES_DELAY_US=N`, `NO_COLOR=1`, `SEED=N`,
+`SPIKE=/path/to/spike`, `SPIKE_MEM_MAP=base:size` (default `0x0:0x1000000`).
 
 Код возврата: `0` — тест дошёл до SIM_STOP (0xF8), `1` — timeout / RTL-ошибка / assertion.
 
@@ -152,6 +157,43 @@ grep -c PASS /tmp/results.txt; grep FAIL /tmp/results.txt
 
 **state_file** — байт-в-байт формат нативного `scr1_final_state.txt`
 (GPR с ABI-именами, mstatus/misa/mie/mtvec/mscratch/mepc/mcause/mtval/mip/mhartid/mcycle/minstret).
+
+## 5a. Верификация со Spike (эталонная модель)
+
+Тестбенч запускает Spike как дочерний процесс (`--log-commits`) и сверяет
+каждую ретайрнутую DUT инструкцию (PC, слово инструкции, запись в GPR)
+с commit-логом Spike. Три режима:
+
+| Режим | Поведение |
+|---|---|
+| `--verify 0` | выключено (по умолчанию) |
+| `--verify 1` | **инкрементальная**: сверка на каждой инструкции, остановка симуляции на первом расхождении (fail fast) |
+| `--verify 2` | **пакетная**: события копятся, полная сверка в конце симуляции, в отчёте — число расхождений |
+
+```bash
+export SPIKE=~/Work/TOOLS/spike/bin/spike
+./build/test.x -f <test.elf> --trace 0 --verify 1     # lockstep
+./build/test.x -f <test.elf> --trace 0 --verify 2     # сверка в конце
+./build/test.x -f <test.elf> --trace 0 --verify 1 -v  # + печать каждой итерации
+```
+
+Формат итерации в режиме `-v`:
+
+```
+V[      1] cyc       6  DUT pc=0x00000200 instr=0xf1402573 rd[x10=0x00000000]  |  REF pc=0x00000200 instr=0xf1402573 rd[x10=0x00000000]  -> OK
+V[   skip] cyc     521  DUT pc=0x00000616 instr=0x00000073  -> SKIP (exception, not committed in spike)
+```
+
+Код возврата: `1` при расхождении (статус `VERIFY`), первые 10 расхождений
+печатаются с деталями (цикл, PC, инструкции, значения rd).
+
+Ограничения эталонной сверки:
+- Spike запускается с RAM `0x0:0x1000000` (SPIKE_MEM_MAP); MMIO-адреса
+  (`0xF0000000` print, `0xF0000100/200` IRQ-регистры) у Spike не
+  эмулируются — тесты с печатью/прерываниями (hello, isr_sample,
+  benchmarks) сверять нельзя, для них `--verify 0`
+- CSR не сверяются (mcycle/minstret/mtime легально расходятся)
+- требуется сборка с `STATE_DUMP=1` (public-сигналы модели)
 
 ## 6. Анализ VCD (wavepeek)
 

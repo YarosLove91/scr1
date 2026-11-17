@@ -203,8 +203,8 @@ void testbench::tick(void)
     // Slave registers advance on the same edge, using the pre-edge samples
     m_mem.posedge();
 
-    // Execution tracer consumes the pre-edge internal samples too
-    if (m_trace.is_open())
+    // Execution tracer / verifier consume the pre-edge internal samples too
+    if (m_trace.events_enabled())
         m_trace.posedge(m_trace_in);
 
     // Drive the new slave outputs and re-settle combinational logic
@@ -223,8 +223,8 @@ void testbench::tick(void)
     // Sample the bus presented at the next posedge
     sample_bus();
 
-    // Sample DUT internals for the execution tracer (pre-posedge values)
-    if (m_trace.is_open())
+    // Sample DUT internals for the tracer/verifier (pre-posedge values)
+    if (m_trace.events_enabled())
         trace_logger::capture(m_top.get(), m_trace_in);
 
 #ifdef TB_DEBUG_AXI
@@ -263,6 +263,9 @@ int testbench::run(uint64_t max_cycles)
     while (m_cycle < max_cycles)
     {
         tick();
+
+        if (m_verify.failed())
+            return 2;
 
         if (m_mem.exit_detected())
             return 0;
@@ -334,6 +337,20 @@ void testbench::capture_state(scr1_state &st) const
 bool testbench::trace_log_enable(const char *path)
 {
     return m_trace.open(path);
+}
+
+//--------------------------------------------------------------------
+// verify_enable: start Spike and attach the verifier to the
+// retirement stream of the trace logger
+//--------------------------------------------------------------------
+bool testbench::verify_enable(verify_mode mode, const char *elf,
+                              const char *isa, const char *spike_path)
+{
+    if (!m_verify.enable(mode, elf, isa, spike_path))
+        return false;
+    if (m_verify.active())
+        m_trace.set_listener(&m_verify);
+    return true;
 }
 
 //--------------------------------------------------------------------

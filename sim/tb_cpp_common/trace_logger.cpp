@@ -12,6 +12,7 @@
 trace_logger::trace_logger()
 {
     m_file        = NULL;
+    m_listener    = NULL;
     m_time_cnt    = 0;
     m_pc_ff       = SCR1_RST_VECTOR;
     m_head        = 0;
@@ -160,7 +161,7 @@ void trace_logger::posedge(const trace_inputs &in)
     //----------------------------------------------------------------
     // Trap events: IRQ/EXC (priority EXC > IRQ), PC = mepc
     //----------------------------------------------------------------
-    if (in.exc || in.irq)
+    if ((m_file != NULL) && (in.exc || in.irq))
     {
         char pc_str[16], op_str[16], st_str[8], extra[256];
 
@@ -185,7 +186,7 @@ void trace_logger::posedge(const trace_inputs &in)
     // Retired instruction (suppressed for the faulting instruction,
     // which is represented by the EXC trap line above)
     //----------------------------------------------------------------
-    if (in.retire && !in.exc)
+    if (in.retire && !in.exc && (m_file != NULL))
     {
         char pc_str[16], op_str[16], rd_str[24], st_str[8];
 
@@ -202,6 +203,23 @@ void trace_logger::posedge(const trace_inputs &in)
         else                               st_str[0] = '\0';
 
         emit_line(m_time_cnt, pc_str, op_str, rd_str, st_str, NULL);
+    }
+
+    //----------------------------------------------------------------
+    // Retirement event for listeners (reference model verification);
+    // includes faulting instructions, matching Spike commit semantics
+    //----------------------------------------------------------------
+    if (in.retire && (m_listener != NULL))
+    {
+        retire_event ev;
+        ev.cycle  = m_time_cnt;
+        ev.pc     = in.retire_pc;
+        ev.instr  = ret_instr;
+        ev.rd_wr  = in.rd_wr && (in.rd_addr != 0);
+        ev.rd     = in.rd_addr;
+        ev.rd_val = in.rd_data;
+        ev.exc    = in.exc;
+        m_listener->on_retire(ev);
     }
 
     //----------------------------------------------------------------

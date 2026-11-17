@@ -30,6 +30,8 @@ CFLAGS         += -DVM_TRACE=1
 CFLAGS         += $(TB_DEFINES)
 CFLAGS         += $(patsubst %,-I%,$(INCLUDE_PATH))
 CFLAGS         += $(EXTRA_CFLAGS)
+# Header dependency tracking
+CFLAGS         += -MMD -MP
 
 LDFLAGS        ?= -O2
 
@@ -54,6 +56,8 @@ all: $(EXE_DIR)$(TARGET)
 
 $(OBJ_DIR) $(EXE_DIR):
 	mkdir -p $@
+
+-include $(OBJ:.o=.d)
 
 $(OBJ_DIR)%.o: %.cpp | $(OBJ_DIR)
 	g++ $(CFLAGS) -c $< -o $@

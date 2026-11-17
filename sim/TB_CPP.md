@@ -117,12 +117,11 @@ make run TEST_IMAGE=<path.elf> RUN_OPTS="--trace 0"     # через make
 | `-F, --state_file F` | дамп GPR/CSR в файл (формат scr1_final_state.txt) |
 | `-L, --trace_log F` | построчный трейс выполнения (инструкция на ретайр) |
 | `-V, --verify 0\|1\|2` | верификация со Spike: 0=выкл, 1=инкрементальная, 2=пакетная |
-| `-v, --verbose` | печатать каждую итерацию сверки (DUT vs REF → OK/причина) |
-| `-P, --spike PATH` | путь к бинарнику Spike (default: `$SPIKE` или `spike` из PATH) |
+| `-v, --verbose FILE` | писать каждую итерацию сверки в FILE (в консоль — только расхождения) |
 | `-I, --isa STR` | ISA для Spike (default `rv32imc_zicsr_zifencei`) |
 
 Env: `ENABLE_WAVES=no` (без VCD), `WAVES_DELAY_US=N`, `NO_COLOR=1`, `SEED=N`,
-`SPIKE=/path/to/spike`, `SPIKE_MEM_MAP=base:size` (default `0x0:0x1000000`).
+`SPIKE_MEM_MAP=base:size[,...]` (default `0x0:0x1000000,0xf0000000:0x1000`).
 
 Код возврата: `0` — тест дошёл до SIM_STOP (0xF8), `1` — timeout / RTL-ошибка / assertion.
 
@@ -160,40 +159,39 @@ grep -c PASS /tmp/results.txt; grep FAIL /tmp/results.txt
 
 ## 5a. Верификация со Spike (эталонная модель)
 
-Тестбенч запускает Spike как дочерний процесс (`--log-commits`) и сверяет
-каждую ретайрнутую DUT инструкцию (PC, слово инструкции, запись в GPR)
-с commit-логом Spike. Три режима:
+Spike линкуется **in-process** (libriscv, `SPIKE_HOME ?= ~/Work/TOOLS/spike`
+в makefile.build_tb): на каждый ретайр DUT выполняется ровно один шаг
+эталонной модели и сверяются PC, слово инструкции и запись в GPR
+(источник эталона — `state->log_reg_write`, а не текстовый лог).
+
+Три режима:
 
 | Режим | Поведение |
 |---|---|
 | `--verify 0` | выключено (по умолчанию) |
-| `--verify 1` | **инкрементальная**: сверка на каждой инструкции, остановка симуляции на первом расхождении (fail fast) |
-| `--verify 2` | **пакетная**: события копятся, полная сверка в конце симуляции, в отчёте — число расхождений |
+| `--verify 1` | **инкрементальная**: lockstep-сверка каждой инструкции, остановка на первом расхождении (fail fast) |
+| `--verify 2` | **пакетная**: события копятся, полная сверка в конце симуляции |
 
 ```bash
-export SPIKE=~/Work/TOOLS/spike/bin/spike
-./build/test.x -f <test.elf> --trace 0 --verify 1     # lockstep
-./build/test.x -f <test.elf> --trace 0 --verify 2     # сверка в конце
-./build/test.x -f <test.elf> --trace 0 --verify 1 -v  # + печать каждой итерации
+./build/test.x -f <test.elf> --trace 0 --verify 1              # lockstep
+./build/test.x -f <test.elf> --trace 0 --verify 2              # сверка в конце
+./build/test.x -f <test.elf> --trace 0 --verify 1 -v iter.log  # + лог итераций
 ```
 
-Формат итерации в режиме `-v`:
+Итог в консоли: `Verification OK: N instructions...` /
+`Verification MISMATCH: M deviations...` + `Verification log saved to ...`
+(первые 10 расхождений печатаются с деталями: цикл, PC, инструкции, rd).
 
-```
-V[      1] cyc       6  DUT pc=0x00000200 instr=0xf1402573 rd[x10=0x00000000]  |  REF pc=0x00000200 instr=0xf1402573 rd[x10=0x00000000]  -> OK
-V[   skip] cyc     521  DUT pc=0x00000616 instr=0x00000073  -> SKIP (exception, not committed in spike)
-```
-
-Код возврата: `1` при расхождении (статус `VERIFY`), первые 10 расхождений
-печатаются с деталями (цикл, PC, инструкции, значения rd).
-
-Ограничения эталонной сверки:
-- Spike запускается с RAM `0x0:0x1000000` (SPIKE_MEM_MAP); MMIO-адреса
-  (`0xF0000000` print, `0xF0000100/200` IRQ-регистры) у Spike не
-  эмулируются — тесты с печатью/прерываниями (hello, isr_sample,
-  benchmarks) сверять нельзя, для них `--verify 0`
+Особенности и ограничения:
+- инструкции с исключением (EXC) шагаются в эталоне без сверки значений
+  (контролируется только выравнивание PC), т.к. trap-семантика логов
+  коммитов отличается; IRQ у эталона не возникают (mtime не тикает) —
+  тесты с прерываниями (isr_sample) сверке не подлежат
+- RAM эталона: `SPIKE_MEM_MAP` (0x0:16MB + окно 4KB над SIM-MMIO
+  0xF0000000, чтобы записи печати не ломали поток коммитов)
 - CSR не сверяются (mcycle/minstret/mtime легально расходятся)
-- требуется сборка с `STATE_DUMP=1` (public-сигналы модели)
+- требуется сборка с `STATE_DUMP=1` (public-сигналы модели DUT)
+- сборка Spike: riscv-isa-sim + libfdt, `--prefix=$SPIKE_HOME`
 
 ## 6. Анализ VCD (wavepeek)
 

@@ -51,7 +51,6 @@ static struct option long_options[] =
     {"trace_log",  required_argument, 0, 'L'},
     {"verify",     required_argument, 0, 'V'},
     {"verbose",    required_argument, 0, 'v'},
-    {"spike",      required_argument, 0, 'P'},
     {"isa",        required_argument, 0, 'I'},
     {"help",       no_argument,       0, 'h'},
     {0, 0, 0, 0}
@@ -71,13 +70,12 @@ static void help_options(void)
     std::cerr << "  --trace_log   | -L FILE       Program execution trace: one line per retired instruction" << std::endl;
     std::cerr << "  --verify      | -V 0|1|2      Spike verification: 0=off, 1=incremental (per instruction)," << std::endl;
     std::cerr << "                                2=batch (compare at the end)" << std::endl;
-    std::cerr << "  --spike       | -P PATH       Spike binary (default: $SPIKE or 'spike' from PATH)" << std::endl;
     std::cerr << "  --isa         | -I STR        Spike ISA string (default rv32imc_zicsr_zifencei)" << std::endl;
     std::cerr << "  --verbose     | -v FILE       Write every verification iteration to FILE" << std::endl;
     std::cerr << "                                (console shows mismatches only)" << std::endl;
     std::cerr << "Environment:"                                                         << std::endl;
-    std::cerr << "  SPIKE=/path/to/spike          Spike binary path"                       << std::endl;
-    std::cerr << "  SPIKE_MEM_MAP=base:size       Spike RAM mapping (default 0x0:0x1000000)" << std::endl;
+    std::cerr << "  SPIKE_MEM_MAP=b:size[,...]    Reference model RAM map"                   << std::endl;
+    std::cerr << "                                (default 0x0:0x1000000,0xf0000000:0x1000)" << std::endl;
     std::cerr << "  ENABLE_WAVES=no               Disable tracing"                       << std::endl;
     std::cerr << "  WAVES_DELAY_US=N              Delay trace start"                     << std::endl;
     std::cerr << "  SEED=N                        Random seed"                           << std::endl;
@@ -101,11 +99,6 @@ int main(int argc, char *argv[])
     int64_t     max_cycles = DEFAULT_MAX_CYCLES;
     const char *vcd_name   = "sysc_wave.vcd";
     const char *filename   = NULL;
-
-    // Spike binary: --spike option, then $SPIKE, then PATH
-    const char *spike_path = getenv("SPIKE");
-    if ((spike_path == NULL) || (spike_path[0] == '\0'))
-        spike_path = "spike";
 
     Verilated::commandArgs(argc, argv);
     // Handle $stop/$fatal from RTL assertions gracefully: return to the
@@ -154,9 +147,6 @@ int main(int argc, char *argv[])
                 break;
             case 'V':
                 verify = (int)strtol(optarg, NULL, 0);
-                break;
-            case 'P':
-                spike_path = optarg;
                 break;
             case 'I':
                 isa = optarg;
@@ -209,7 +199,7 @@ int main(int argc, char *argv[])
     {
         if ((verify_log != NULL) && !tb->verify_set_log(verify_log))
             exit(EXIT_FAILURE);
-        if (!tb->verify_enable((verify_mode)verify, filename, isa, spike_path))
+        if (!tb->verify_enable((verify_mode)verify, filename, isa))
             exit(EXIT_FAILURE);
         if (verify_log != NULL)
             log.info(std::string("Verify log: ") + verify_log);

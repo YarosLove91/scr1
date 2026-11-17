@@ -1,255 +1,273 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
-#include <iomanip>
-#include <iostream>
+#include <cstdio>
+#include <exception>
 
-#include <fcntl.h>
-#include <signal.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include <riscv/sim.h>
+#include <riscv/devices.h>
+#include <riscv/processor.h>
+#include <riscv/decode.h>
 
 #include "logger.h"
 #include "spike_ref.h"
+
+//--------------------------------------------------------------------
+// Default memory map: RAM at 0x0 (code/data/TCM) + a RAM window over
+// the SIM MMIO registers (0xF0000000 print / 0xF0000100 ext_irq /
+// 0xF0000200 soft_irq) so that stores there are plain memory writes
+// for the reference model and do not disturb the commit stream.
+//--------------------------------------------------------------------
+#define SPIKE_MEM_MAP_DEFAULT "0x0:0x1000000,0xf0000000:0x1000"
+
+//--------------------------------------------------------------------
+// tb_sim_t: thin sim_t wrapper exposing the protected ELF entry point
+// (the CLI reaches it via htif_t::run() -> reset(), which we do not
+// call; the model is stepped manually in lockstep)
+//--------------------------------------------------------------------
+namespace {
+class tb_sim_t : public sim_t
+{
+public:
+    using sim_t::sim_t;
+    reg_t entry_pc(void) { return get_entry_point(); }
+    // htif_t::start(): load the ELF and reset the cores (sets the PC
+    // to the ELF entry point via sim_t::reset/set_pc_to_entry_point)
+    void tb_start(void) { start(); }
+};
+}
+
+//--------------------------------------------------------------------
+// spike_ref::impl: everything that needs the Spike headers
+//--------------------------------------------------------------------
+struct spike_ref::impl
+{
+    cfg_t                    cfg;         // must outlive sim
+    std::string              isa_str;     // storage for cfg.isa
+    std::string              priv_str;
+    tb_sim_t                *sim;
+    processor_t             *core;
+    state_t                 *state;
+
+    // RAM regions for direct instruction fetch (host pointers)
+    struct ram_region
+    {
+        reg_t   base;
+        reg_t   size;
+        mem_t  *ram;
+    };
+    std::vector<ram_region>  rams;
+
+    impl(): sim(NULL), core(NULL), state(NULL) {}
+};
+
+//--------------------------------------------------------------------
+// parse_mem_map: "base:size[,base:size...]" -> mem_cfg_t vector
+//--------------------------------------------------------------------
+static bool parse_mem_map(const char *s, std::vector<mem_cfg_t> &out)
+{
+    out.clear();
+    std::string copy(s);
+    size_t pos = 0;
+    while (pos < copy.size())
+    {
+        size_t comma = copy.find(',', pos);
+        std::string item = copy.substr(pos, (comma == std::string::npos)
+                                                 ? std::string::npos : comma - pos);
+        size_t colon = item.find(':');
+        if (colon == std::string::npos)
+            return false;
+        unsigned long long base = strtoull(item.substr(0, colon).c_str(), NULL, 0);
+        unsigned long long size = strtoull(item.substr(colon + 1).c_str(), NULL, 0);
+        if ((base == 0 && size == 0) || (size == 0))
+            return false;
+        out.push_back(mem_cfg_t((reg_t)base, (reg_t)size));
+        if (comma == std::string::npos)
+            break;
+        pos = comma + 1;
+    }
+    return !out.empty();
+}
 
 //--------------------------------------------------------------------
 // spike_ref
 //--------------------------------------------------------------------
 spike_ref::spike_ref()
 {
-    m_file = NULL;
-    m_pid  = -1;
+    m_impl = new impl();
 }
 
 spike_ref::~spike_ref()
 {
     stop();
+    delete m_impl;
+    m_impl = NULL;
 }
 
 //--------------------------------------------------------------------
-// resolve_exe: locate an executable by name (PATH lookup like execvp)
-// so that a missing Spike binary is reported before forking.
+// start: build the reference platform and load the ELF (by LMA,
+// same as the DUT loader)
 //--------------------------------------------------------------------
-static std::string resolve_exe(const char *name)
+bool spike_ref::start(const char *elf, const char *isa)
 {
-    if (strchr(name, '/') != NULL)
-        return (access(name, X_OK) == 0) ? std::string(name) : std::string();
+    stop();
 
-    const char *path = getenv("PATH");
-    if (path == NULL)
-        return std::string();
-
-    std::string candidate;
-    const char *p = path;
-    while (*p != '\0')
+    const char *map_env = getenv("SPIKE_MEM_MAP");
+    std::vector<mem_cfg_t> layout;
+    if (!parse_mem_map((map_env && map_env[0]) ? map_env : SPIKE_MEM_MAP_DEFAULT,
+                       layout))
     {
-        const char *colon = strchr(p, ':');
-        size_t len = (colon != NULL) ? (size_t)(colon - p) : strlen(p);
-        if (len > 0)
-        {
-            candidate.assign(p, len);
-            candidate += '/';
-            candidate += name;
-            if (access(candidate.c_str(), X_OK) == 0)
-                return candidate;
-        }
-        if (colon == NULL)
-            break;
-        p = colon + 1;
-    }
-    return std::string();
-}
-
-//--------------------------------------------------------------------
-// start: fork Spike with the commit log streaming into a pipe.
-// Spike never terminates on scr1 tests (SIM_STOP is a self-jump),
-// so the log is consumed lazily and the process is killed at stop().
-//--------------------------------------------------------------------
-bool spike_ref::start(const char *elf, const char *isa, const char *spike_path)
-{
-    std::string exe = resolve_exe(spike_path);
-    if (exe.empty())
-    {
-        m_error = std::string("executable not found: '") + spike_path +
-                  "' (set $SPIKE or pass --spike /path/to/spike)";
+        m_error = std::string("bad SPIKE_MEM_MAP format: '") +
+                  ((map_env && map_env[0]) ? map_env : SPIKE_MEM_MAP_DEFAULT) + "'";
         logger::inst().error("spike: " + m_error);
         return false;
     }
 
-    int fds[2];
-    if (pipe(fds) != 0)
+    m_impl->isa_str  = isa;
+    m_impl->priv_str = "m";
+    m_impl->cfg.isa        = m_impl->isa_str.c_str();
+    m_impl->cfg.priv       = m_impl->priv_str.c_str();
+    m_impl->cfg.mem_layout = layout;
+
+    std::vector<std::pair<reg_t, abstract_mem_t *>> mems;
+    m_impl->rams.clear();
+    for (const auto &m : layout)
     {
-        m_error = std::string("pipe(): ") + strerror(errno);
+        mem_t *ram = new mem_t(m.get_size());
+        mems.push_back(std::make_pair(m.get_base(), ram));
+        m_impl->rams.push_back({m.get_base(), m.get_size(), ram});
+    }
+
+    std::vector<std::string> htif_args;
+    htif_args.push_back(std::string(elf));
+
+    try
+    {
+        // No boot ROM (dtb disabled -> pc starts at the ELF entry),
+        // no debug module, no plugins, no instruction limit
+        m_impl->sim = new tb_sim_t(&m_impl->cfg,
+                                /* halted            */ false,
+                                /* mems              */ mems,
+                                /* plugin devices    */ {},
+                                /* dtb_discovery     */ false,
+                                /* htif args         */ htif_args,
+                                /* dm_config         */ std::nullopt,
+                                /* log_path          */ "/dev/null",   // commit text sink
+                                /* dtb_enabled       */ false,
+                                /* dtb_file          */ nullptr,
+                                /* socket_enabled    */ false,
+                                /* cmd_file          */ nullptr,
+                                /* instruction_limit */ std::nullopt);
+    }
+    catch (const std::exception &e)
+    {
+        m_error = std::string("sim_t: ") + e.what();
         logger::inst().error("spike: " + m_error);
+        m_impl->sim = NULL;
         return false;
     }
 
-    pid_t pid = fork();
-    if (getenv("TB_DEBUG_SPIKE"))
+    // Load the ELF into the reference memory and start at its entry point
+    try
     {
-        char dbg[128];
-        int n = snprintf(dbg, sizeof(dbg), "[tb] fork() returned %d (errno=%d)\n", (int)pid, errno);
-        write(STDERR_FILENO, dbg, n);
+        m_impl->sim->tb_start();
     }
-    if (pid < 0)
+    catch (const std::exception &e)
     {
-        m_error = std::string("fork(): ") + strerror(errno);
+        m_error = std::string("start: ") + e.what();
         logger::inst().error("spike: " + m_error);
-        close(fds[0]);
-        close(fds[1]);
+        stop();
         return false;
     }
 
-    if (pid == 0)
-    {
-        // Child: spike <args> with stdout+stderr merged into the pipe.
-        // stdin goes to /dev/null so Spike never touches the terminal
-        // (blocking reads / SIGTTIN when the TB runs in background).
-        int devnull = open("/dev/null", O_RDONLY);
-        if (devnull >= 0)
-        {
-            dup2(devnull, STDIN_FILENO);
-            close(devnull);
-        }
-        close(fds[0]);
-        dup2(fds[1], STDOUT_FILENO);
-        dup2(fds[1], STDERR_FILENO);
-        close(fds[1]);
+    m_impl->core  = m_impl->sim->get_core(0);
+    m_impl->state = m_impl->core->get_state();
 
-        std::string isa_arg  = std::string("--isa=") + isa;
-        std::string map_arg  = std::string("-m");
-        const char *map_env  = getenv("SPIKE_MEM_MAP");
-        // RAM at 0x0 (code/data/TCM) + RAM window over the SIM MMIO
-        // registers (0xF0000000 print / 0xF0000100 ext_irq / 0xF0000200
-        // soft_irq): stores there become plain memory writes for Spike,
-        // keeping the commit stream in sync with the DUT.
-        map_arg += (map_env && map_env[0]) ? map_env
-                                           : "0x0:0x1000000,0xf0000000:0x1000";
-
-        const char *argv[] =
-        {
-            exe.c_str(),
-            "--disable-dtb",      // no boot ROM: PC starts at the ELF entry
-            "--no-dm",            // no debug module at [0x0, 0x1000)
-            "--log-commits",
-            isa_arg.c_str(),
-            "--priv=m",
-            map_arg.c_str(),
-            elf,
-            NULL
-        };
-        execv(exe.c_str(), (char *const *)argv);
-        if (getenv("TB_DEBUG_SPIKE"))
-        {
-            char dbg[256];
-            int n = snprintf(dbg, sizeof(dbg), "[tb-child] execv(%s) failed: %s\n",
-                             exe.c_str(), strerror(errno));
-            write(STDERR_FILENO, dbg, n);
-        }
-        _exit(127);
-    }
-
-    // Parent
-    close(fds[1]);
-    m_file = fdopen(fds[0], "r");
-    if (m_file == NULL)
-    {
-        m_error = std::string("fdopen(): ") + strerror(errno);
-        logger::inst().error("spike: " + m_error);
-        kill(pid, SIGKILL);
-        waitpid(pid, NULL, 0);
-        return false;
-    }
-    m_pid = pid;
+    // Record per-instruction register writebacks (state->log_reg_write);
+    // the text commit log goes to /dev/null (see log_path above)
+    m_impl->core->enable_log_commits();
     return true;
 }
 
 //--------------------------------------------------------------------
-// stop: kill the reference process and close the pipe
+// stop: destroy the reference model
 //--------------------------------------------------------------------
 void spike_ref::stop(void)
 {
-    if (m_file != NULL)
+    if (m_impl->sim != NULL)
     {
-        fclose(m_file);
-        m_file = NULL;
-    }
-    if (m_pid > 0)
-    {
-        kill(m_pid, SIGKILL);
-        waitpid(m_pid, NULL, 0);
-        m_pid = -1;
+        delete m_impl->sim;
+        m_impl->sim   = NULL;
+        m_impl->core  = NULL;
+        m_impl->state = NULL;
     }
 }
 
-//--------------------------------------------------------------------
-// parse_commit: extract pc/instr and an optional GPR write from one
-// Spike commit-log line, e.g.
-//   core   0: 3 0x00000200 (0x00000093) x 1 0x00000000
-//--------------------------------------------------------------------
-bool spike_ref::parse_commit(const char *line, ref_commit &c)
+bool spike_ref::is_running(void) const
 {
-    // Instruction word is enclosed in parentheses
-    const char *open_paren  = strchr(line, '(');
-    const char *close_paren = (open_paren != NULL) ? strchr(open_paren, ')') : NULL;
-    if ((open_paren == NULL) || (close_paren == NULL) ||
-        (close_paren - open_paren < 3))
-        return false;
-
-    c = ref_commit();
-    c.instr = (uint32_t)strtoul(open_paren + 1, NULL, 16);
-
-    // PC: last "0x..." token before the parenthesis
-    const char *pc_tok = NULL;
-    for (const char *p = line; p < open_paren - 1; ++p)
-    {
-        if ((p[0] == '0') && ((p[1] == 'x') || (p[1] == 'X')))
-            pc_tok = p;
-    }
-    if (pc_tok == NULL)
-        return false;
-    c.pc = (uint32_t)strtoul(pc_tok + 2, NULL, 16);
-
-    // Optional register write: "x<reg> 0x<val>" after the parenthesis
-    // (CSR writes look like "c773_mtvec 0x..." and are ignored)
-    const char *t = close_paren + 1;
-    while (*t == ' ')
-        t++;
-    if ((t[0] == 'x') && (t[1] >= '0') && (t[1] <= '9'))
-    {
-        char *end = NULL;
-        unsigned long rd = strtoul(t + 1, &end, 10);
-        if ((end != NULL) && (end != t + 1))
-        {
-            while (*end == ' ')
-                end++;
-            if ((end[0] == '0') && ((end[1] == 'x') || (end[1] == 'X')))
-            {
-                c.rd_wr  = true;
-                c.rd     = (uint32_t)rd;
-                c.rd_val = (uint32_t)strtoul(end + 2, NULL, 16);
-            }
-        }
-    }
-    return true;
+    return m_impl->sim != NULL;
 }
 
 //--------------------------------------------------------------------
-// next_commit: blocking read of the next commit record; non-commit
-// lines (banners, exception reports) are skipped
+// next_commit: execute exactly one instruction in the reference
+// model and report it as a commit record
 //--------------------------------------------------------------------
 bool spike_ref::next_commit(ref_commit &c)
 {
-    if (m_file == NULL)
+    if (m_impl->sim == NULL)
         return false;
 
-    char line[1024];
-    while (fgets(line, sizeof(line), m_file) != NULL)
+    c = ref_commit();
+    state_t *st = m_impl->state;
+    c.pc = (uint32_t)st->pc;
+
+    // Instruction fetch straight from the RAM host memory (RVC aware).
+    // NB: mem_t is page-sparse; contents() is valid only within one
+    // 4 KiB page, so fetch in aligned 16-bit chunks (a 2-byte aligned
+    // halfword never crosses a page boundary).
+    auto fetch16 = [this](reg_t a) -> uint16_t {
+        for (const auto &r : m_impl->rams)
+        {
+            if ((a >= r.base) && (a + 1 < r.base + r.size))
+            {
+                const uint8_t *p = (const uint8_t *)r.ram->contents(a - r.base);
+                return (uint16_t)(p[0] | (p[1] << 8));
+            }
+        }
+        return 0;
+    };
+    uint16_t lo = fetch16(st->pc);
+    if ((lo & 3u) == 3u)
+        c.instr = (uint32_t)lo | ((uint32_t)fetch16(st->pc + 2) << 16);
+    else
+        c.instr = lo;
+
+    try
     {
-        if (parse_commit(line, c))
-            return true;
+        m_impl->core->step(1);
     }
-    return false;
+    catch (const std::exception &e)
+    {
+        m_error = std::string("step: ") + e.what();
+        logger::inst().error("spike: " + m_error);
+        return false;
+    }
+
+    // GPR writeback from the commit log records:
+    //   key = (rd << 4) | type, type 0 = integer register
+    for (const auto &kv : st->log_reg_write)
+    {
+        if ((kv.first & 0xFu) != 0u)
+            continue;                       // FPR (|1) / CSR (|4) entries
+        reg_t rd = kv.first >> 4;
+        if (rd == 0)
+            break;                          // x0 writes are discarded
+        c.rd_wr  = true;
+        c.rd     = (uint32_t)rd;
+        c.rd_val = (uint32_t)kv.second.v[0];
+        break;
+    }
+    return true;
 }
 
 //--------------------------------------------------------------------
@@ -257,11 +275,11 @@ bool spike_ref::next_commit(ref_commit &c)
 //--------------------------------------------------------------------
 verifier::verifier()
 {
-    m_mode       = verify_mode::OFF;
-    m_compared   = 0;
-    m_mismatches = 0;
-    m_fail_fast  = false;
-    m_ref_eof    = false;
+    m_mode         = verify_mode::OFF;
+    m_compared     = 0;
+    m_mismatches   = 0;
+    m_fail_fast    = false;
+    m_ref_eof      = false;
     m_verbose_file = NULL;
 }
 
@@ -299,8 +317,7 @@ bool verifier::set_verbose_file(const char *path)
 //--------------------------------------------------------------------
 // enable
 //--------------------------------------------------------------------
-bool verifier::enable(verify_mode mode, const char *elf, const char *isa,
-                      const char *spike_path)
+bool verifier::enable(verify_mode mode, const char *elf, const char *isa)
 {
     m_mode = mode;
     if (m_mode == verify_mode::OFF)
@@ -311,15 +328,15 @@ bool verifier::enable(verify_mode mode, const char *elf, const char *isa,
     m_mode = verify_mode::OFF;
     return false;
 #else
-    if (!m_spike.start(elf, isa, spike_path))
+    if (!m_spike.start(elf, isa))
     {
-        logger::inst().error("cannot start Spike: " + m_spike.error());
+        logger::inst().error("cannot start the in-process Spike model: " + m_spike.error());
         m_mode = verify_mode::OFF;
         return false;
     }
     logger::inst().info(std::string("Verification: ") +
                         (m_mode == verify_mode::INCREMENTAL ? "INCREMENTAL" : "BATCH") +
-                        " (spike: " + spike_path + ", isa: " + isa + ")");
+                        " (in-process Spike lockstep, isa: " + isa + ")");
     return true;
 #endif
 }
@@ -334,9 +351,37 @@ bool verifier::fetch_ref(ref_commit &c)
     if (!m_spike.next_commit(c))
     {
         m_ref_eof = true;
+        if (m_spike.error().empty() == false)
+            logger::inst().error("VERIFY: reference model error: " + m_spike.error());
         return false;
     }
     return true;
+}
+
+//--------------------------------------------------------------------
+// step_exception: the DUT retired a faulting instruction; step the
+// reference through the same instruction and only check PC alignment
+// (Spike takes the trap within the same step, no commit semantics)
+//--------------------------------------------------------------------
+void verifier::step_exception(const retire_event &ev)
+{
+    ref_commit ref;
+    if (!fetch_ref(ref))
+    {
+        logger::inst().error("VERIFY: reference model stopped at exception, cycle " +
+                             std::to_string(ev.cycle));
+        m_mismatches++;
+        m_fail_fast = true;
+        return;
+    }
+    if (ref.pc != ev.pc)
+    {
+        note_desync(ev, ref);
+        m_fail_fast = true;
+        return;
+    }
+    if (m_verbose_file != NULL)
+        print_skip(ev);
 }
 
 //--------------------------------------------------------------------
@@ -375,6 +420,21 @@ void verifier::note_error(const retire_event &ev, const ref_commit &ref,
 }
 
 //--------------------------------------------------------------------
+// note_desync: exception-path PC alignment broken
+//--------------------------------------------------------------------
+void verifier::note_desync(const retire_event &ev, const ref_commit &ref)
+{
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "VERIFY desync at cycle %llu: DUT exception at pc=0x%08x, "
+             "reference at pc=0x%08x",
+             (unsigned long long)ev.cycle, ev.pc, ref.pc);
+    m_mismatches++;
+    if (m_mismatches <= MAX_REPORTED)
+        logger::inst().error(buf);
+}
+
+//--------------------------------------------------------------------
 // diff_reason: NULL when the DUT event matches the reference commit
 //--------------------------------------------------------------------
 const char *verifier::diff_reason(const retire_event &ev, const ref_commit &ref)
@@ -384,7 +444,7 @@ const char *verifier::diff_reason(const retire_event &ev, const ref_commit &ref)
     if (ev.rd_wr != ref.rd_wr)  return "rd write presence mismatch";
     if (ev.rd_wr)
     {
-        if (ev.rd != ref.rd)        return "rd index mismatch";
+        if (ev.rd != ref.rd)         return "rd index mismatch";
         if (ev.rd_val != ref.rd_val) return "rd value mismatch";
     }
     return NULL;
@@ -427,7 +487,7 @@ void verifier::print_skip(const retire_event &ev)
 {
     fprintf(m_verbose_file,
             "V[   skip] cyc %7llu  DUT pc=0x%08x instr=0x%08x  "
-            "-> SKIP (exception, not committed in spike)\n",
+            "-> SKIP (exception, stepped in reference without compare)\n",
             (unsigned long long)ev.cycle, ev.pc, ev.instr);
 }
 
@@ -454,16 +514,6 @@ void verifier::on_retire(const retire_event &ev)
     if (m_mode == verify_mode::OFF)
         return;
 
-    // Spike does not emit a commit record for an instruction that took
-    // an exception (only an "exception ..." line), while scr1's instret
-    // counts it. Skip such events to stay in sync with the reference.
-    if (ev.exc)
-    {
-        if (m_verbose_file != NULL)
-            print_skip(ev);
-        return;
-    }
-
     if (m_mode == verify_mode::BATCH)
     {
         m_events.push_back(ev);
@@ -474,11 +524,18 @@ void verifier::on_retire(const retire_event &ev)
     if (m_fail_fast)
         return;
 
+    // Faulting instructions: step the reference in lockstep but skip
+    // the value comparison (no commit semantics for traps)
+    if (ev.exc)
+    {
+        step_exception(ev);
+        return;
+    }
+
     ref_commit ref;
     if (!fetch_ref(ref))
     {
-        logger::inst().error("VERIFY: reference model produced no more commits "
-                             "(spike terminated early or log unreadable) at cycle " +
+        logger::inst().error("VERIFY: reference model stopped at cycle " +
                              std::to_string(ev.cycle));
         m_mismatches++;
         m_fail_fast = true;
@@ -491,7 +548,7 @@ void verifier::on_retire(const retire_event &ev)
 
 //--------------------------------------------------------------------
 // finish: BATCH comparison at the end of simulation; in any mode it
-// stops the reference process (guaranteed child cleanup).
+// releases the reference model.
 //--------------------------------------------------------------------
 uint64_t verifier::finish(void)
 {
@@ -499,11 +556,20 @@ uint64_t verifier::finish(void)
     {
         for (size_t i = 0; i < m_events.size(); ++i)
         {
+            if (m_fail_fast)
+                break;
+
+            if (m_events[i].exc)
+            {
+                step_exception(m_events[i]);
+                continue;
+            }
+
             ref_commit ref;
             if (!fetch_ref(ref))
             {
                 if (m_mismatches < MAX_REPORTED)
-                    logger::inst().error("VERIFY: reference exhausted after " +
+                    logger::inst().error("VERIFY: reference stopped after " +
                                          std::to_string(m_compared) + " commits, " +
                                          std::to_string(m_events.size() - i) +
                                          " DUT events left uncompared");
@@ -511,6 +577,8 @@ uint64_t verifier::finish(void)
                 break;
             }
             compare_and_report(m_events[i], ref);
+            if (m_mismatches > 0)
+                m_fail_fast = true;
         }
         if (m_verbose_file != NULL)
             fflush(m_verbose_file);

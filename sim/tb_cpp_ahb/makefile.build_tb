@@ -11,6 +11,9 @@ TARGET         ?= test.x
 # Shared testbench sources (logger, elf_load, state_dump, trace_logger, main)
 COMMON_DIR     ?= ../tb_cpp_common
 
+# Spike reference model (in-process lockstep verification)
+SPIKE_HOME     ?= $(HOME)/Work/TOOLS/spike
+
 # Additional include directories (local dir wins over the shared one)
 INCLUDE_PATH   ?=
 INCLUDE_PATH   += ./
@@ -18,6 +21,7 @@ INCLUDE_PATH   += $(COMMON_DIR)
 INCLUDE_PATH   += ./verilated
 INCLUDE_PATH   += $(VERILATOR_SRC)
 INCLUDE_PATH   += $(VERILATOR_SRC)/vltstd
+INCLUDE_PATH   += $(SPIKE_HOME)/include
 
 # Testbench config defines (match the RTL configuration):
 #   add -DTB_NO_IPIC for configs without SCR1_IPIC_EN
@@ -40,7 +44,9 @@ MODEL_LIBS      = ./verilated/libV$(TOP).a
 MODEL_LIBS     += ./verilated/V$(TOP)__ALL.a
 MODEL_LIBS     += ./verilated/libverilated.a
 
-LIBS            = $(MODEL_LIBS) -lelf
+SPIKE_LIBS      = -L$(SPIKE_HOME)/lib -Wl,-rpath,$(SPIKE_HOME)/lib                   -lriscv -lfesvr -ldisasm -lsoftfloat
+
+LIBS            = $(MODEL_LIBS) -lelf $(SPIKE_LIBS)
 
 # SRC / Object list (local + shared)
 VPATH          := .:$(COMMON_DIR)

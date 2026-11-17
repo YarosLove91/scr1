@@ -306,9 +306,9 @@ bool testbench::trace_log_enable(const char *path)
 // retirement stream of the trace logger
 //--------------------------------------------------------------------
 bool testbench::verify_enable(verify_mode mode, const char *elf,
-                              const char *isa, const char *spike_path)
+                              const char *isa)
 {
-    if (!m_verify.enable(mode, elf, isa, spike_path))
+    if (!m_verify.enable(mode, elf, isa))
         return false;
     if (m_verify.active())
         m_trace.set_listener(&m_verify);

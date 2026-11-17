@@ -2,10 +2,8 @@
 #define SPIKE_REF_H
 
 #include <cstdint>
-#include <cstdio>
 #include <string>
 #include <vector>
-#include <sys/types.h>
 
 #include "trace_logger.h"
 
@@ -20,8 +18,7 @@ enum class verify_mode
 };
 
 //--------------------------------------------------------------------
-// ref_commit: one parsed record of the Spike commit log
-//   core   0: 3 0x00000200 (0x00000093) x 1 0x00000000
+// ref_commit: one reference instruction stepped in the Spike model
 //--------------------------------------------------------------------
 struct ref_commit
 {
@@ -35,8 +32,10 @@ struct ref_commit
 };
 
 //--------------------------------------------------------------------
-// spike_ref: runs Spike as a subprocess (commit log streaming) and
-// parses its output lazily, record by record.
+// spike_ref: in-process Spike reference model (libriscv).
+// The model is built once (RAM at 0x0 + a window over the SIM MMIO
+// registers, ELF loaded by physical addresses) and stepped one
+// instruction at a time in lockstep with the DUT retirement stream.
 //--------------------------------------------------------------------
 class spike_ref
 {
@@ -44,26 +43,29 @@ public:
     spike_ref();
     ~spike_ref();
 
-    bool start(const char *elf, const char *isa, const char *spike_path);
+    bool start(const char *elf, const char *isa);
     void stop(void);
-    bool is_running(void) const { return m_pid > 0; }
+    bool is_running(void) const;
 
-    // Blocking read of the next commit record; false on EOF/error
+    // Execute one instruction; fill the commit info (pc/instr before
+    // the step, GPR writeback as the register file diff)
     bool next_commit(ref_commit &c);
 
     const std::string &error(void) const { return m_error; }
 
 private:
-    bool parse_commit(const char *line, ref_commit &c);
+    spike_ref(const spike_ref &) = delete;
+    spike_ref &operator=(const spike_ref &) = delete;
 
-    FILE   *m_file;
-    pid_t   m_pid;
+    struct impl;            // PIMPL: holds cfg_t/sim_t/processor_t
+    impl       *m_impl;
     std::string m_error;
 };
 
 //--------------------------------------------------------------------
 // verifier: compares the DUT retirement stream (trace_logger
-// listener events) against Spike commits.
+// listener events) against the reference model, instruction by
+// instruction (lockstep).
 //--------------------------------------------------------------------
 class verifier : public trace_retire_listener
 {
@@ -71,8 +73,7 @@ public:
     verifier();
     ~verifier();
 
-    bool enable(verify_mode mode, const char *elf, const char *isa,
-                const char *spike_path);
+    bool enable(verify_mode mode, const char *elf, const char *isa);
     bool        active(void) const  { return m_mode != verify_mode::OFF; }
     verify_mode mode(void) const    { return m_mode; }
 
@@ -83,8 +84,9 @@ public:
     // trace_retire_listener
     void on_retire(const retire_event &ev) override;
 
-    // BATCH: drain the reference and compare everything; returns the
-    // number of mismatches (0 = verified clean)
+    // BATCH: step the reference through the accumulated events and
+    // compare; in any mode releases the reference model.
+    // Returns the number of mismatches (0 = verified clean)
     uint64_t finish(void);
 
     // INCREMENTAL fail-fast flag: simulation should stop
@@ -94,6 +96,7 @@ public:
 
 private:
     bool fetch_ref(ref_commit &c);
+    void step_exception(const retire_event &ev);
     const char *diff_reason(const retire_event &ev, const ref_commit &ref);
     void compare_and_report(const retire_event &ev, const ref_commit &ref);
     void print_iteration(const retire_event &ev, const ref_commit &ref,
@@ -101,6 +104,7 @@ private:
     void print_skip(const retire_event &ev);
     void note_error(const retire_event &ev, const ref_commit &ref,
                     const char *what);
+    void note_desync(const retire_event &ev, const ref_commit &ref);
 
     verify_mode             m_mode;
     spike_ref               m_spike;

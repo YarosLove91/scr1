@@ -57,8 +57,7 @@ public:
     bool trace_log_enabled(void) const { return m_trace.is_open(); }
 
     // Spike reference model verification (OFF/INCREMENTAL/BATCH)
-    bool verify_enable(verify_mode mode, const char *elf, const char *isa,
-                       const char *spike_path);
+    bool verify_enable(verify_mode mode, const char *elf, const char *isa);
     bool verify_set_log(const char *path)  { return m_verify.set_verbose_file(path); }
     bool     verify_active(void) const     { return m_verify.active(); }
     bool     verify_failed(void) const     { return m_verify.failed(); }

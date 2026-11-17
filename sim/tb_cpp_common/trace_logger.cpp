@@ -223,7 +223,11 @@ void trace_logger::posedge(const trace_inputs &in)
     }
 
     //----------------------------------------------------------------
-    // FIFO update: drop entries up to the retired one, push issued
+    // FIFO update: drop entries up to the retired one, push issued.
+    // On redirect (branch/jump/trap/fence.i) the whole queue is
+    // flushed: everything issued from the old stream is discarded by
+    // the core, so stale {pc,instr} pairs (e.g. prefetched-before-
+    // fence.i words) must not survive for a later retire match.
     //----------------------------------------------------------------
     if (in.retire && ret_found)
     {
@@ -239,7 +243,13 @@ void trace_logger::posedge(const trace_inputs &in)
         }
     }
 
-    if (in.issue_vd && (m_count < FIFO_DEPTH))
+    if (in.redirect)
+    {
+        m_head  = 0;
+        m_tail  = 0;
+        m_count = 0;
+    }
+    else if (in.issue_vd && (m_count < FIFO_DEPTH))
     {
         m_f_pc[m_tail]    = m_pc_ff;
         m_f_instr[m_tail] = in.issue_instr;

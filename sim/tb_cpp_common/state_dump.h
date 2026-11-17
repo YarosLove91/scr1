@@ -40,6 +40,10 @@ public:
     // Capture the snapshot from the model
     static void capture(dut_top_t *top, scr1_state &st);
 
+    // Read a single GPR (ABI index 0..31) from the model; returns 0
+    // for x0 and for builds without public internals
+    static uint32_t read_gpr(dut_top_t *top, unsigned idx);
+
     // Native scr1_final_state.txt-compatible text
     static std::string to_string(const scr1_state &st, const char *status, uint64_t time_ns);
 

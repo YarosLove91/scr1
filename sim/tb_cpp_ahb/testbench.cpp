@@ -294,6 +294,14 @@ void testbench::capture_state(scr1_state &st) const
 }
 
 //--------------------------------------------------------------------
+// result_a0: test return code convention (0 = pass)
+//--------------------------------------------------------------------
+uint32_t testbench::result_a0(void) const
+{
+    return state_dump::read_gpr(m_top.get(), 10);
+}
+
+//--------------------------------------------------------------------
 // trace_log_enable
 //--------------------------------------------------------------------
 bool testbench::trace_log_enable(const char *path)

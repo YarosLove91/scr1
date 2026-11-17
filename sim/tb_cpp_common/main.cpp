@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <csignal>
+#include <cstdio>
 #include <memory>
 #include <string>
 
@@ -127,8 +128,18 @@ int main(int argc, char *argv[])
         verified   = true;
     }
 
+    // Test result code (a0/x10): report_results() convention, 0 = pass
+    uint32_t a0     = 0;
+    bool     a0_bad = false;
+    if ((rc == 0) && opt.check_a0)
+    {
+        a0     = tb->result_a0();
+        a0_bad = (a0 != 0);
+    }
+
     const char *status = Verilated::gotError()       ? "ERROR"
                        : (rc == 2 || mismatches > 0) ? "VERIFY"
+                       : a0_bad                      ? "FAIL"
                        : (rc == 0)                   ? "PASS"
                        :                               "TIMEOUT";
 
@@ -159,6 +170,15 @@ int main(int argc, char *argv[])
     {
         log.test_fail("Verification mismatch after " + std::to_string(compared) +
                       " compared instructions (cycle " + std::to_string(tb->cycles()) + ")");
+        tb->abort();
+        exit(EXIT_FAILURE);
+    }
+
+    if (a0_bad)
+    {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Test returned failure code a0=0x%08x", a0);
+        log.test_fail(buf);
         tb->abort();
         exit(EXIT_FAILURE);
     }

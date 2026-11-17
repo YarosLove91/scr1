@@ -20,6 +20,7 @@ static struct option long_options[] =
     {"state",      required_argument, 0, 'S'},
     {"state_file", required_argument, 0, 'F'},
     {"trace_log",  required_argument, 0, 'L'},
+    {"check_a0",   required_argument, 0, 'A'},
     {"verify",     required_argument, 0, 'V'},
     {"verbose",    required_argument, 0, 'v'},
     {"isa",        required_argument, 0, 'I'},
@@ -42,6 +43,7 @@ void options::usage(void)
     std::cerr << "  --state       | -S 0|1        Dump GPR/CSR state to the log at the end" << std::endl;
     std::cerr << "  --state_file  | -F FILE       Write GPR/CSR state to FILE (native scr1_final_state.txt format)" << std::endl;
     std::cerr << "  --trace_log   | -L FILE       Program execution trace: one line per retired instruction" << std::endl;
+    std::cerr << "  --check_a0    | -A 0|1        Nonzero a0 at exit = test failure (default 1)" << std::endl;
     std::cerr << "  --verify      | -V 0|1|2      Spike verification: 0=off, 1=incremental (per instruction)," << std::endl;
     std::cerr << "                                2=batch (compare at the end)" << std::endl;
     std::cerr << "  --verbose     | -v FILE       Write every verification iteration to FILE" << std::endl;
@@ -109,6 +111,9 @@ void options::parse(int argc, char *argv[])
                 break;
             case 'L':
                 trace_log = optarg;
+                break;
+            case 'A':
+                check_a0 = (int)strtol(optarg, NULL, 0);
                 break;
             case 'V':
                 verify = (int)strtol(optarg, NULL, 0);

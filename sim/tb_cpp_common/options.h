@@ -32,6 +32,9 @@ struct options
     // Program execution trace
     const char *trace_log      = NULL;                    // -L, --trace_log
 
+    // Treat nonzero a0 (x10) at the exit point as test failure
+    int         check_a0       = 1;                       // -A, --check_a0
+
     // Spike reference model verification
     int         verify         = 0;                       // -V, --verify 0|1|2
     const char *verify_log     = NULL;                    // -v, --verbose FILE

@@ -65,6 +65,22 @@ void state_dump::capture(dut_top_t *top, scr1_state &st)
 }
 
 //--------------------------------------------------------------------
+// read_gpr: single register read (x0 is hardwired zero)
+//--------------------------------------------------------------------
+uint32_t state_dump::read_gpr(dut_top_t *top, unsigned idx)
+{
+#ifndef TB_STATE_DUMP
+    (void)top;
+    (void)idx;
+    return 0;
+#else
+    if ((idx == 0) || (idx > 31))
+        return 0;
+    return (uint32_t)SCR1_PIPE(top, i_pipe_mprf__DOT__mprf_int)[31 - idx];
+#endif
+}
+
+//--------------------------------------------------------------------
 // to_string: native scr1_final_state.txt-compatible report
 //--------------------------------------------------------------------
 std::string state_dump::to_string(const scr1_state &st, const char *status, uint64_t time_ns)

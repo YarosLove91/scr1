@@ -52,6 +52,9 @@ public:
     // Capture the architectural state (GPRs + CSRs) of the DUT
     void capture_state(scr1_state &st) const;
 
+    // Test result code: a0 (x10) at the exit point, per report_results()
+    uint32_t result_a0(void) const;
+
     // Program execution trace log (one line per retired instruction)
     bool trace_log_enable(const char *path);
     bool trace_log_enabled(void) const { return m_trace.is_open(); }

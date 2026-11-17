@@ -116,6 +116,7 @@ make run TEST_IMAGE=<path.elf> RUN_OPTS="--trace 0"     # через make
 | `-S, --state 0\|1` | дамп GPR/CSR в лог в конце прогона |
 | `-F, --state_file F` | дамп GPR/CSR в файл (формат scr1_final_state.txt) |
 | `-L, --trace_log F` | построчный трейс выполнения (инструкция на ретайр) |
+| `-A, --check_a0 0\|1` | ненулевой a0 (x10) на точке выхода = провал теста (default 1) |
 | `-V, --verify 0\|1\|2` | верификация со Spike: 0=выкл, 1=инкрементальная, 2=пакетная |
 | `-v, --verbose FILE` | писать каждую итерацию сверки в FILE (в консоль — только расхождения) |
 | `-I, --isa STR` | ISA для Spike (default `rv32imc_zicsr_zifencei`) |
@@ -123,7 +124,11 @@ make run TEST_IMAGE=<path.elf> RUN_OPTS="--trace 0"     # через make
 Env: `ENABLE_WAVES=no` (без VCD), `WAVES_DELAY_US=N`, `NO_COLOR=1`, `SEED=N`,
 `SPIKE_MEM_MAP=base:size[,...]` (default `0x0:0x1000000,0xf0000000:0x1000`).
 
-Код возврата: `0` — тест дошёл до SIM_STOP (0xF8), `1` — timeout / RTL-ошибка / assertion.
+Код возврата: `0` — тест дошёл до SIM_STOP (0xF8) **и a0=0** (соглашение
+`report_results`: a0 = код результата, 0 = pass). `1` — timeout, RTL-ошибка,
+расхождение с Spike или ненулевой a0 (`Exit failure! Test returned failure
+code a0=0x...`). Требует сборки с `STATE_DUMP=1` (чтение mprf через rootp);
+отключается через `--check_a0 0`.
 
 Примеры:
 

@@ -6,9 +6,11 @@
 #include "options.h"
 
 //--------------------------------------------------------------------
-// Command line options
+// Command line options.
+// Short forms must match long_options val chars: every option takes
+// an argument except -h.
 //--------------------------------------------------------------------
-#define GETOPTS_ARGS "f:c:v:h"
+#define GETOPTS_ARGS "f:c:t:s:w:S:F:L:A:V:v:I:h"
 
 static struct option long_options[] =
 {
@@ -43,7 +45,8 @@ void options::usage(void)
     std::cerr << "  --state       | -S 0|1        Dump GPR/CSR state to the log at the end" << std::endl;
     std::cerr << "  --state_file  | -F FILE       Write GPR/CSR state to FILE (native scr1_final_state.txt format)" << std::endl;
     std::cerr << "  --trace_log   | -L FILE       Program execution trace: one line per retired instruction" << std::endl;
-    std::cerr << "  --check_a0    | -A 0|1        Nonzero a0 at exit = test failure (default 1)" << std::endl;
+    std::cerr << "  --check_a0    | -A 0|1        Check result code at exit: gp/TESTNUM (odd gp)" << std::endl;
+    std::cerr << "                                or a0 (C tests); nonzero = failure (default 1)" << std::endl;
     std::cerr << "  --verify      | -V 0|1|2      Spike verification: 0=off, 1=incremental (per instruction)," << std::endl;
     std::cerr << "                                2=batch (compare at the end)" << std::endl;
     std::cerr << "  --verbose     | -v FILE       Write every verification iteration to FILE" << std::endl;

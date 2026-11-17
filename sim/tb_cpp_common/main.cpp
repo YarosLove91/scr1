@@ -128,13 +128,50 @@ int main(int argc, char *argv[])
         verified   = true;
     }
 
-    // Test result code (a0/x10): report_results() convention, 0 = pass
-    uint32_t a0     = 0;
-    bool     a0_bad = false;
+    // Test result at the exit point. Three conventions coexist:
+    //   - C tests (hello/mcycle/...): crt sets gp = __global_pointer$
+    //     (nonzero); report_results puts the code into a0, 0 = pass
+    //   - riscv-tests (riscv_isa): TESTNUM = gp; pass = 1,
+    //     fail = small odd value (2n+1 or |1337)
+    //   - riscv_arch / riscv_compliance / isr_sample: gp and a0 are
+    //     clobbered by test data; pass/fail is defined by the offline
+    //     signature, so registers give no reliable verdict
+    uint32_t    result      = 0;
+    bool        a0_bad      = false;
+    bool        ambiguous   = false;
+    const char *result_reg  = "a0";
     if ((rc == 0) && opt.check_a0)
     {
-        a0     = tb->result_a0();
-        a0_bad = (a0 != 0);
+        uint32_t gp     = tb->result_gp();
+        uint32_t a0     = tb->result_a0();
+        uint32_t gp_sym = tb->gp_symbol();
+
+        if ((gp_sym != 0u) && (gp == gp_sym))
+        {
+            // C test: a0 is the result code
+            if (a0 != 0u)
+            {
+                a0_bad = true;
+                result = a0;
+            }
+        }
+        else if (gp == 1u)
+        {
+            // riscv-tests PASS
+        }
+        else if ((gp & 1u) && (gp <= 0xFFFFu))
+        {
+            // riscv-tests FAIL encoding (small odd TESTNUM)
+            a0_bad     = true;
+            result     = gp;
+            result_reg = "gp/TESTNUM";
+        }
+        else if (a0 != 0u)
+        {
+            // arch/compliance family: registers carry test data
+            ambiguous = true;
+            result    = a0;
+        }
     }
 
     const char *status = Verilated::gotError()       ? "ERROR"
@@ -157,6 +194,15 @@ int main(int argc, char *argv[])
     if (verified)
         report_verify(opt, compared, mismatches);
 
+    if (ambiguous)
+    {
+        char buf[96];
+        snprintf(buf, sizeof(buf), "a0=0x%08x at exit is test data, not a verdict "
+                 "(arch/compliance family: pass/fail is defined by the signature; "
+                 "use --verify for runtime checking)", result);
+        log.warning(buf);
+    }
+
     // Verdict
     if (Verilated::gotError())
     {
@@ -176,8 +222,9 @@ int main(int argc, char *argv[])
 
     if (a0_bad)
     {
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Test returned failure code a0=0x%08x", a0);
+        char buf[96];
+        snprintf(buf, sizeof(buf), "Test returned failure code %s=0x%08x",
+                 result_reg, result);
         log.test_fail(buf);
         tb->abort();
         exit(EXIT_FAILURE);

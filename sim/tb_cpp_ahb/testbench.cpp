@@ -15,7 +15,8 @@ testbench::testbench():
     m_mem(1024 * 1024),
     m_time(0),
     m_cycle(0),
-    m_entry_point(0)
+    m_entry_point(0),
+    m_gp_sym(0)
 #if VM_TRACE
     ,
     m_tfp(nullptr),
@@ -80,6 +81,8 @@ bool testbench::load_elf(const char *filename)
     if (!elf.load())
         return false;
     m_entry_point = elf.get_entry_point();
+    // C-family marker: crt sets gp = __global_pointer$ at startup
+    elf.get_symbol("__global_pointer$", m_gp_sym);
     return true;
 }
 
@@ -299,6 +302,14 @@ void testbench::capture_state(scr1_state &st) const
 uint32_t testbench::result_a0(void) const
 {
     return state_dump::read_gpr(m_top.get(), 10);
+}
+
+//--------------------------------------------------------------------
+// result_gp: riscv-tests TESTNUM register
+//--------------------------------------------------------------------
+uint32_t testbench::result_gp(void) const
+{
+    return state_dump::read_gpr(m_top.get(), 3);
 }
 
 //--------------------------------------------------------------------

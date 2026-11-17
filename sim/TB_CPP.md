@@ -124,11 +124,17 @@ make run TEST_IMAGE=<path.elf> RUN_OPTS="--trace 0"     # через make
 Env: `ENABLE_WAVES=no` (без VCD), `WAVES_DELAY_US=N`, `NO_COLOR=1`, `SEED=N`,
 `SPIKE_MEM_MAP=base:size[,...]` (default `0x0:0x1000000,0xf0000000:0x1000`).
 
-Код возврата: `0` — тест дошёл до SIM_STOP (0xF8) **и a0=0** (соглашение
-`report_results`: a0 = код результата, 0 = pass). `1` — timeout, RTL-ошибка,
-расхождение с Spike или ненулевой a0 (`Exit failure! Test returned failure
-code a0=0x...`). Требует сборки с `STATE_DUMP=1` (чтение mprf через rootp);
-отключается через `--check_a0 0`.
+Код возврата: `0` — тест дошёл до SIM_STOP (0xF8) **и проверка кода
+результата прошла**; `1` — timeout, RTL-ошибка, расхождение с Spike или
+провальный код результата. `--check_a0 0` отключает проверку результата.
+
+Правило вердикта (`--check_a0 1`, по умолчанию) учитывает три соглашения:
+
+| Семейство | Признак | Вердикт |
+|---|---|---|
+| C-тесты (hello, mcycle, bench…) | `gp == __global_pointer$` (символ ELF) | `a0 != 0` → FAIL |
+| riscv-tests (riscv_isa) | `gp == 1` / маленький нечётный gp | PASS / FAIL(gp=TESTNUM) |
+| arch / compliance / isr_sample | gp и a0 затёрты тестовыми данными | PASS; при `a0 != 0` — warning (вердикт по сигнатуре или `--verify`) |
 
 Примеры:
 

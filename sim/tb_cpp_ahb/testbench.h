@@ -52,8 +52,13 @@ public:
     // Capture the architectural state (GPRs + CSRs) of the DUT
     void capture_state(scr1_state &st) const;
 
-    // Test result code: a0 (x10) at the exit point, per report_results()
+    // Test result registers at the exit point:
+    //   a0 (x10) - C tests convention (report_results: 0 = pass)
+    //   gp (x3)  - riscv-tests family convention (TESTNUM: 1 = pass, odd = fail)
     uint32_t result_a0(void) const;
+    uint32_t result_gp(void) const;
+    // __global_pointer$ symbol of the loaded ELF (0 when absent)
+    uint32_t gp_symbol(void) const { return m_gp_sym; }
 
     // Program execution trace log (one line per retired instruction)
     bool trace_log_enable(const char *path);
@@ -82,6 +87,7 @@ private:
     uint64_t m_time;            // ns
     uint64_t m_cycle;
     uint32_t m_entry_point;
+    uint32_t m_gp_sym;
 
 #if VM_TRACE
     std::unique_ptr<VerilatedVcdC> m_tfp;

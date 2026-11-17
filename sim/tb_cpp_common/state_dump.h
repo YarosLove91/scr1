@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-#include "Vscr1_top_axi.h"
+#include "dut_access.h"
 
 //--------------------------------------------------------------------
 // scr1_state: architectural state snapshot (GPRs + M-mode CSRs).
@@ -38,7 +38,7 @@ class state_dump
 {
 public:
     // Capture the snapshot from the model
-    static void capture(Vscr1_top_axi *top, scr1_state &st);
+    static void capture(dut_top_t *top, scr1_state &st);
 
     // Native scr1_final_state.txt-compatible text
     static std::string to_string(const scr1_state &st, const char *status, uint64_t time_ns);

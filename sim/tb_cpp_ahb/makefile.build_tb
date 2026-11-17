@@ -8,9 +8,13 @@ OBJ_DIR        ?= obj/
 EXE_DIR        ?= build/
 TARGET         ?= test.x
 
-# Additional include directories
+# Shared testbench sources (logger, elf_load, state_dump, trace_logger, main)
+COMMON_DIR     ?= ../tb_cpp_common
+
+# Additional include directories (local dir wins over the shared one)
 INCLUDE_PATH   ?=
 INCLUDE_PATH   += ./
+INCLUDE_PATH   += $(COMMON_DIR)
 INCLUDE_PATH   += ./verilated
 INCLUDE_PATH   += $(VERILATOR_SRC)
 INCLUDE_PATH   += $(VERILATOR_SRC)/vltstd
@@ -36,8 +40,9 @@ MODEL_LIBS     += ./verilated/libverilated.a
 
 LIBS            = $(MODEL_LIBS) -lelf
 
-# SRC / Object list
-SRC            := $(wildcard ./*.cpp)
+# SRC / Object list (local + shared)
+VPATH          := .:$(COMMON_DIR)
+SRC            := $(wildcard ./*.cpp) $(wildcard $(COMMON_DIR)/*.cpp)
 OBJ            := $(addprefix $(OBJ_DIR),$(patsubst %.cpp,%.o,$(notdir $(SRC))))
 
 ###############################################################################

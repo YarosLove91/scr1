@@ -3,6 +3,18 @@
 Окружения: `sim/tb_cpp_ahb/` (scr1_top_ahb) и `sim/tb_cpp_axi/` (scr1_top_axi).
 Заменяют нативные SV-тестбенчи. Чистый C++ (Verilator `--cc`), без SystemC.
 
+## Структура
+
+```
+sim/tb_cpp_common/   общий код обоих тестбенчей:
+                     main.cpp, logger.*, elf_load.* (LMA-загрузчик ELF),
+                     mem_api.h, state_dump.* (GPR/CSR), trace_logger.*
+                     (трейс выполнения) — логика одна, доступ к модели
+                     через dut_access.h каждого TB
+sim/tb_cpp_ahb/      dut_access.h, ahb.h, tb_ahb_mem.*, testbench.*, makefile'ы
+sim/tb_cpp_axi/      dut_access.h, axi.h, tb_axi_mem.*, testbench.*, makefile'ы
+```
+
 ## Быстрый старт: hello от начала до конца
 
 ```bash

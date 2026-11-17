@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 
-#include "Vscr1_top_axi.h"
+#include "dut_access.h"
 
 //--------------------------------------------------------------------
 // trace_inputs: DUT internals sampled once per cycle (pre-posedge
@@ -68,7 +68,7 @@ public:
     bool is_open(void) const { return m_file != NULL; }
 
     // Capture the sampled internals from the verilated model
-    static void capture(Vscr1_top_axi *top, trace_inputs &in);
+    static void capture(dut_top_t *top, trace_inputs &in);
 
     // One clock tick: emit trap/retire lines and update the FIFO
     void posedge(const trace_inputs &in);

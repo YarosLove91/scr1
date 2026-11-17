@@ -2,15 +2,8 @@
 #include <iomanip>
 #include <sstream>
 
-#include "Vscr1_top_ahb___024root.h"
 #include "logger.h"
 #include "state_dump.h"
-
-//--------------------------------------------------------------------
-// Flattened internal signal access (verilated with --public-flat-rw)
-//--------------------------------------------------------------------
-#define SCR1_PIPE(top, name) \
-    ((top)->rootp->scr1_top_ahb__DOT__i_core_top__DOT__i_pipe_top__DOT__##name)
 
 // misa: RV32IMC (MXL=1(32), C|M|I), same default as the native mechanism
 #ifndef SCR1_STATE_MISA
@@ -34,7 +27,7 @@ static const char *const g_abi_names[32] =
 //--------------------------------------------------------------------
 // capture: read GPRs and CSRs from the model internals
 //--------------------------------------------------------------------
-void state_dump::capture(Vscr1_top_ahb *top, scr1_state &st)
+void state_dump::capture(dut_top_t *top, scr1_state &st)
 {
 #ifndef TB_STATE_DUMP
     (void)top;

@@ -1,14 +1,7 @@
 #include <cstring>
 
-#include "Vscr1_top_axi___024root.h"
 #include "logger.h"
 #include "trace_logger.h"
-
-//--------------------------------------------------------------------
-// Flattened internal signal access (verilated with --public-flat-rw)
-//--------------------------------------------------------------------
-#define SCR1_PIPE(top, name) \
-    ((top)->rootp->scr1_top_axi__DOT__i_core_top__DOT__i_pipe_top__DOT__##name)
 
 // Reset vector (SCR1_ARCH_RST_VECTOR)
 #define SCR1_RST_VECTOR 0x00000200u
@@ -70,7 +63,7 @@ void trace_logger::close(void)
 //--------------------------------------------------------------------
 // capture: sample the DUT internals for the coming posedge
 //--------------------------------------------------------------------
-void trace_logger::capture(Vscr1_top_axi *top, trace_inputs &in)
+void trace_logger::capture(dut_top_t *top, trace_inputs &in)
 {
 #ifndef TB_STATE_DUMP
     (void)top;

@@ -91,7 +91,9 @@ bool testbench::load_elf(const char *filename)
     {
         // Raw snippy image: synthesize the boot wrapper at the reset
         // vector and mirror everything into the reference model patches
-        for (const auto &w : make_boot_stub(m_entry_point))
+        for (const auto &w : make_boot_stub(m_entry_point,
+                                            elf.snippy_stack_top(),
+                                            elf.snippy_util_base()))
         {
             mem_patch p;
             p.addr = w.addr;

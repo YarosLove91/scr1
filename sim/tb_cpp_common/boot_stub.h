@@ -12,9 +12,9 @@
 // yaml). The testbench synthesizes a minimal boot wrapper at the SCR1
 // reset vector (0x200):
 //
-//   0x200: lui  sp, 0x2            # snippy stack top (0x2000)
-//   0x204: lui  tp, 0x2            # utility/spill base (0x2000)
-//   0x208: lui  gp, 0x2            # utility/spill base (0x2000)
+//   0x200: lui  sp, <stack_top>    # snippy stack top (stack base + size)
+//   0x204: lui  tp, <util_base>    # utility/spill base
+//   0x208: lui  gp, <util_base>    # utility/spill base
 //   0x20c: jal  ra, <entry>        # call SnippyFunction
 //   0x210: li   a0, 0              # result code: pass
 //   0x214: jal  x0, 0xF8           # -> SIM_STOP (test done)
@@ -27,7 +27,10 @@
 #define BOOT_STUB_BASE      0x00000200u
 #define SIM_EXIT_ADDR_WORD  0x000000F4u     // nop
 #define SIM_STOP_ADDR_WORD  0x000000F8u     // j .
+
+// Default layout (fallback when the snippy .ld map is unavailable)
 #define SNIPPY_STACK_TOP    0x00002000u
+#define SNIPPY_UTIL_BASE    0x00002000u
 
 //--------------------------------------------------------------------
 // Instruction encoders
@@ -57,7 +60,10 @@ struct boot_stub_patch
     uint32_t word;
 };
 
-inline std::vector<boot_stub_patch> make_boot_stub(uint32_t entry)
+// stack_top and util_base must be 4 KiB aligned (lui loads imm<<12)
+inline std::vector<boot_stub_patch> make_boot_stub(uint32_t entry,
+                                                   uint32_t stack_top = SNIPPY_STACK_TOP,
+                                                   uint32_t util_base = SNIPPY_UTIL_BASE)
 {
     std::vector<boot_stub_patch> p;
 
@@ -66,9 +72,9 @@ inline std::vector<boot_stub_patch> make_boot_stub(uint32_t entry)
     p.push_back({SIM_STOP_ADDR_WORD, 0x0000006Fu});      // j .
 
     // Boot wrapper at the reset vector
-    p.push_back({BOOT_STUB_BASE + 0x00, lui_enc(2, SNIPPY_STACK_TOP >> 12)});
-    p.push_back({BOOT_STUB_BASE + 0x04, lui_enc(4, SNIPPY_STACK_TOP >> 12)});
-    p.push_back({BOOT_STUB_BASE + 0x08, lui_enc(3, SNIPPY_STACK_TOP >> 12)});
+    p.push_back({BOOT_STUB_BASE + 0x00, lui_enc(2, stack_top >> 12)});
+    p.push_back({BOOT_STUB_BASE + 0x04, lui_enc(4, util_base >> 12)});
+    p.push_back({BOOT_STUB_BASE + 0x08, lui_enc(3, util_base >> 12)});
     p.push_back({BOOT_STUB_BASE + 0x0C,
                  jal_enc(1, (int32_t)(entry - (BOOT_STUB_BASE + 0x0C)))});
     p.push_back({BOOT_STUB_BASE + 0x10, 0x00000513u});   // li a0, 0

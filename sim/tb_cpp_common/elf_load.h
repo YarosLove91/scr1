@@ -24,11 +24,13 @@ typedef struct Elf Elf;
 // preloaded with the same image (Spike cannot load ET_REL itself).
 //--------------------------------------------------------------------
 
-// Snippy section placement (must match the generation yaml)
+// Snippy section placement defaults (used when the companion
+// <name>.elf.ld map is missing; must match the generation yaml)
 #define SNIPPY_STACK_BASE   0x00001000u
 #define SNIPPY_UTIL_BASE    0x00002000u
 #define SNIPPY_CODE_BASE    0x00003000u
 #define SNIPPY_DATA_BASE    0x00009000u
+#define SNIPPY_STACK_SIZE   0x00001000u
 
 class elf_load
 {
@@ -44,6 +46,10 @@ public:
     bool     is_relocatable(void) const { return m_relocatable; }
     // Loaded chunks for reference-model preloading (ET_REL only)
     const std::vector<mem_patch> &patches(void) const { return m_patches; }
+    // Snippy layout for the boot stub (from <name>.elf.ld when present,
+    // built-in defaults otherwise)
+    uint32_t snippy_stack_top(void) const { return m_stack_top; }
+    uint32_t snippy_util_base(void) const { return m_util_base; }
 
 protected:
     bool load_segments(int fd, Elf *elf);
@@ -54,6 +60,8 @@ protected:
     uint32_t    m_entry_point;
     bool        m_relocatable;
     std::vector<mem_patch> m_patches;
+    uint32_t    m_stack_top;
+    uint32_t    m_util_base;
 };
 
 #endif

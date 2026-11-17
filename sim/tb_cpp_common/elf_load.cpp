@@ -1,13 +1,17 @@
+#include <charconv>
+#include <fstream>
+#include <iomanip>
+#include <map>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <libelf.h>
 #include <gelf.h>
-#include <iomanip>
-#include <sstream>
-#include <string>
-#include <vector>
 
 #include "elf_load.h"
 #include "logger.h"
@@ -21,6 +25,8 @@ elf_load::elf_load(const char *filename, mem_api *target)
     m_target      = target;
     m_entry_point = 0;
     m_relocatable = false;
+    m_stack_top   = SNIPPY_STACK_BASE + SNIPPY_STACK_SIZE;
+    m_util_base   = SNIPPY_UTIL_BASE;
 }
 
 //--------------------------------------------------------------------
@@ -139,16 +145,59 @@ bool elf_load::load_segments(int fd, Elf *e)
 }
 
 //--------------------------------------------------------------------
-// snippy_map: fixed section placement (matches the generation yaml /
-// link_snippy.ld conventions)
+// snippy_defaults: built-in section placement (matches the generation
+// yaml / link_snippy.ld conventions); used as a fallback only
 //--------------------------------------------------------------------
-static bool snippy_map(const char *name, uint32_t &base)
+static bool snippy_defaults(const char *name, uint32_t &base)
 {
     if (strcmp(name, ".snippy.stack.rw") == 0)   { base = SNIPPY_STACK_BASE; return true; }
     if (strcmp(name, ".snippy.utility.rw") == 0) { base = SNIPPY_UTIL_BASE;  return true; }
     if (strcmp(name, ".snippy.code.rx") == 0)    { base = SNIPPY_CODE_BASE;  return true; }
     if (strcmp(name, ".snippy.data.rw") == 0)    { base = SNIPPY_DATA_BASE;  return true; }
     return false;
+}
+
+//--------------------------------------------------------------------
+// parse_snippy_ld: section base addresses from the companion linker
+// script that llvm-snippy emits next to the raw ELF
+// (<name>.elf.ld). Recognized lines look like:
+//   .snippy.code.rx 0x3000: {
+//   .snippy.stack.rw 0x1000 (NOLOAD) : {
+//--------------------------------------------------------------------
+static bool parse_snippy_ld(const std::string &path,
+                            std::map<std::string, uint32_t> &out)
+{
+    std::ifstream f(path);
+    if (!f.is_open())
+        return false;
+
+    std::string line;
+    while (std::getline(f, line))
+    {
+        size_t sec = line.find(".snippy.");
+        if (sec == std::string::npos)
+            continue;
+
+        // Section name: up to the first whitespace
+        size_t name_end = line.find_first_of(" \t", sec);
+        std::string name = line.substr(sec, name_end - sec);
+
+        // Base address: first hex literal after the name
+        size_t hex = line.find("0x", name_end);
+        if (hex == std::string::npos)
+            hex = line.find("0X", name_end);
+        if (hex == std::string::npos)
+            continue;
+
+        const char *first = line.c_str() + hex + 2;
+        const char *last  = line.c_str() + line.size();
+        uint32_t    base  = 0;
+        if (std::from_chars(first, last, base, 16).ec != std::errc())
+            continue;
+
+        out[name] = base;
+    }
+    return !out.empty();
 }
 
 //--------------------------------------------------------------------
@@ -162,6 +211,25 @@ bool elf_load::load_sections(int fd, Elf *e)
 
     GElf_Ehdr ehdr;
     gelf_getehdr(e, &ehdr);
+
+    // Section base addresses: companion <name>.elf.ld first, built-in
+    // defaults as a fallback
+    std::map<std::string, uint32_t> ldmap;
+    std::string ld_path = m_filename + ".ld";
+    bool have_ld = parse_snippy_ld(ld_path, ldmap);
+    if (!have_ld)
+        logger::inst().warning("snippy map '" + ld_path +
+                               "' not found, using built-in section addresses");
+
+    auto resolve_base = [&](const char *name, uint32_t &base) -> bool {
+        auto it = ldmap.find(name);
+        if (it != ldmap.end())
+        {
+            base = it->second;
+            return true;
+        }
+        return snippy_defaults(name, base);
+    };
 
     // Section bases for symbol resolution
     uint32_t code_base = 0;
@@ -185,15 +253,25 @@ bool elf_load::load_sections(int fd, Elf *e)
             return false;
         }
 
-        if (!(shdr.sh_flags & SHF_ALLOC) || shdr.sh_type != SHT_PROGBITS ||
-            shdr.sh_size == 0)
-            continue;   // NOBITS sections stay zero-filled
+        if (!(shdr.sh_flags & SHF_ALLOC))
+            continue;
 
         uint32_t base;
-        if (!snippy_map(name, base))
+        bool known = resolve_base(name, base);
+
+        // Boot-stub layout comes from the (NOBITS) stack/utility sections
+        if (known && (strcmp(name, ".snippy.stack.rw") == 0))
+            m_stack_top = base + (uint32_t)shdr.sh_size;
+        if (known && (strcmp(name, ".snippy.utility.rw") == 0))
+            m_util_base = base;
+
+        if (shdr.sh_type != SHT_PROGBITS || shdr.sh_size == 0)
+            continue;   // NOBITS sections stay zero-filled
+
+        if (!known)
             continue;   // .note.snippy and friends are not runtime image
 
-        if (base == SNIPPY_CODE_BASE)
+        if (strcmp(name, ".snippy.code.rx") == 0)
         {
             code_base = base;
             have_code = true;

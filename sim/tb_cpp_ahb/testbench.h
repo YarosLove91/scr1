@@ -11,6 +11,7 @@
 #endif
 
 #include "Vscr1_top_ahb.h"
+#include "options.h"
 #include "tb_ahb_mem.h"
 #include "trace_logger.h"
 #include "spike_ref.h"
@@ -24,7 +25,6 @@ struct scr1_state;
 #define RTC_CLK_DIV         50      // rtc_clk toggle every 50 cycles (1 MHz)
 #define RESET_CYCLES        10      // rst_n low duration
 #define TRST_CYCLES         90      // trst_n low duration (~900 ns, native TB)
-#define DEFAULT_MAX_CYCLES  2000000 // native TIMEOUT = 20 ms @ 100 MHz
 
 //--------------------------------------------------------------------
 // testbench: pure C++ replacement of scr1_top_tb_ahb

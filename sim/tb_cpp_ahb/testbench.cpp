@@ -136,6 +136,10 @@ void testbench::tick(void)
     // Slave state advances on the same edge, using the pre-edge bus samples
     m_mem.posedge();
 
+    // Execution tracer consumes the pre-edge internal samples too
+    if (m_trace.is_open())
+        m_trace.posedge(m_trace_in);
+
     // Drive slave outputs from the NEW state and re-settle combinational
     // logic with clk still high (no edge event)
     ahb_slave_ports is;
@@ -181,6 +185,10 @@ void testbench::tick(void)
     dm.hwdata = m_top->dmem_hwdata;
 
     m_mem.sample_inputs(im, dm);
+
+    // Sample DUT internals for the execution tracer (pre-posedge values)
+    if (m_trace.is_open())
+        trace_logger::capture(m_top.get(), m_trace_in);
 
 #ifdef TB_DEBUG_AHB
     if (m_cycle < 120)
@@ -232,6 +240,7 @@ int testbench::run(uint64_t max_cycles)
 //--------------------------------------------------------------------
 void testbench::abort(void)
 {
+    m_trace.close();
 #if VM_TRACE
     if (m_tfp)
     {
@@ -279,6 +288,14 @@ void testbench::set_trace_delay_us(uint32_t us)
 void testbench::capture_state(scr1_state &st) const
 {
     state_dump::capture(m_top.get(), st);
+}
+
+//--------------------------------------------------------------------
+// trace_log_enable
+//--------------------------------------------------------------------
+bool testbench::trace_log_enable(const char *path)
+{
+    return m_trace.open(path);
 }
 
 //--------------------------------------------------------------------

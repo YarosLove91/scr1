@@ -203,6 +203,10 @@ void testbench::tick(void)
     // Slave registers advance on the same edge, using the pre-edge samples
     m_mem.posedge();
 
+    // Execution tracer consumes the pre-edge internal samples too
+    if (m_trace.is_open())
+        m_trace.posedge(m_trace_in);
+
     // Drive the new slave outputs and re-settle combinational logic
     // with clk still high (no edge event)
     drive_bus();
@@ -218,6 +222,10 @@ void testbench::tick(void)
 
     // Sample the bus presented at the next posedge
     sample_bus();
+
+    // Sample DUT internals for the execution tracer (pre-posedge values)
+    if (m_trace.is_open())
+        trace_logger::capture(m_top.get(), m_trace_in);
 
 #ifdef TB_DEBUG_AXI
     if (m_cycle < 120)
@@ -270,6 +278,7 @@ int testbench::run(uint64_t max_cycles)
 //--------------------------------------------------------------------
 void testbench::abort(void)
 {
+    m_trace.close();
 #if VM_TRACE
     if (m_tfp)
     {
@@ -317,6 +326,14 @@ void testbench::set_trace_delay_us(uint32_t us)
 void testbench::capture_state(scr1_state &st) const
 {
     state_dump::capture(m_top.get(), st);
+}
+
+//--------------------------------------------------------------------
+// trace_log_enable
+//--------------------------------------------------------------------
+bool testbench::trace_log_enable(const char *path)
+{
+    return m_trace.open(path);
 }
 
 //--------------------------------------------------------------------

@@ -48,6 +48,7 @@ static struct option long_options[] =
     {"vcd_name",   required_argument, 0, 'w'},
     {"state",      required_argument, 0, 'S'},
     {"state_file", required_argument, 0, 'F'},
+    {"trace_log",  required_argument, 0, 'L'},
     {"help",       no_argument,       0, 'h'},
     {0, 0, 0, 0}
 };
@@ -63,6 +64,7 @@ static void help_options(void)
     std::cerr << "  --vcd_name    | -w FILE       VCD file name (default sysc_wave.vcd)" << std::endl;
     std::cerr << "  --state       | -S 0|1        Dump GPR/CSR state to the log at the end" << std::endl;
     std::cerr << "  --state_file  | -F FILE       Write GPR/CSR state to FILE (native scr1_final_state.txt format)" << std::endl;
+    std::cerr << "  --trace_log   | -L FILE       Program execution trace: one line per retired instruction" << std::endl;
     std::cerr << "Environment:"                                                         << std::endl;
     std::cerr << "  ENABLE_WAVES=no               Disable tracing"                       << std::endl;
     std::cerr << "  WAVES_DELAY_US=N              Delay trace start"                     << std::endl;
@@ -80,6 +82,7 @@ int main(int argc, char *argv[])
     int         seed       = 1;
     int         state_log  = 0;
     const char *state_file = NULL;
+    const char *trace_log  = NULL;
     int64_t     max_cycles = DEFAULT_MAX_CYCLES;
     const char *vcd_name   = "sysc_wave.vcd";
     const char *filename   = NULL;
@@ -126,6 +129,9 @@ int main(int argc, char *argv[])
             case 'F':
                 state_file = optarg;
                 break;
+            case 'L':
+                trace_log = optarg;
+                break;
             case 'h':
             case '?':
             default:
@@ -153,6 +159,13 @@ int main(int argc, char *argv[])
     {
         log.error(std::string("Could not load ") + filename);
         exit(EXIT_FAILURE);
+    }
+
+    if (trace_log != NULL)
+    {
+        if (!tb->trace_log_enable(trace_log))
+            exit(EXIT_FAILURE);
+        log.info(std::string("Trace log: ") + trace_log);
     }
 
     if (trace && tb->waves_enabled())

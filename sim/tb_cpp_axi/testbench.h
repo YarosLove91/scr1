@@ -12,6 +12,7 @@
 
 #include "Vscr1_top_axi.h"
 #include "tb_axi_mem.h"
+#include "trace_logger.h"
 
 struct scr1_state;
 
@@ -49,6 +50,10 @@ public:
     // Capture the architectural state (GPRs + CSRs) of the DUT
     void capture_state(scr1_state &st) const;
 
+    // Program execution trace log (one line per retired instruction)
+    bool trace_log_enable(const char *path);
+    bool trace_log_enabled(void) const { return m_trace.is_open(); }
+
 private:
     void tick(void);
     void dump(void);
@@ -58,6 +63,8 @@ private:
 
     std::unique_ptr<Vscr1_top_axi> m_top;
     tb_axi_mem                     m_mem;
+    trace_logger                   m_trace;
+    trace_inputs                   m_trace_in;
 
     uint64_t m_time;            // ns
     uint64_t m_cycle;

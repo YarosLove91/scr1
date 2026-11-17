@@ -9,6 +9,13 @@ SIM_TRACE_DEF  ?= SCR1_TRACE_LOG_DIS
 # Testbench config defines, see makefile.build_tb
 TB_DEFINES     ?=
 
+# Dump GPR/CSR state support: verilate with --public-flat-rw and
+# compile the state access code (set 0 for a faster/smaller build)
+STATE_DUMP     ?= 1
+ifeq ($(STATE_DUMP), 1)
+TB_DEFINES     += -DTB_STATE_DUMP
+endif
+
 # Default test image: hello.elf of an existing native build, if present
 TEST_IMAGE     ?= $(firstword $(wildcard ../../build/verilator_AHB*/hello.elf) ./test.elf)
 
@@ -37,7 +44,7 @@ print_help:
 	@echo "  TEST_IMAGE=<path to elf> RUN_OPTS=\"-c NUM --trace 0|1 --vcd_name FILE\""
 
 build:
-	make -f makefile.generate_verilated TOP=$(TOP) SIM_CFG_DEF=$(SIM_CFG_DEF) SIM_TRACE_DEF=$(SIM_TRACE_DEF)
+	make -f makefile.generate_verilated TOP=$(TOP) SIM_CFG_DEF=$(SIM_CFG_DEF) SIM_TRACE_DEF=$(SIM_TRACE_DEF) STATE_DUMP=$(STATE_DUMP)
 	make -f makefile.build_verilated TOP=$(TOP) -j $(NUM_THREADS)
 	make -f makefile.build_tb TOP=$(TOP) TB_DEFINES="$(TB_DEFINES)" -j $(NUM_THREADS)
 

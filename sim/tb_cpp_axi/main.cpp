@@ -7,6 +7,7 @@
 #include <string>
 
 #include "logger.h"
+#include "state_dump.h"
 #include "testbench.h"
 
 //--------------------------------------------------------------------
@@ -45,6 +46,8 @@ static struct option long_options[] =
     {"trace",      required_argument, 0, 't'},
     {"seed",       required_argument, 0, 's'},
     {"vcd_name",   required_argument, 0, 'w'},
+    {"state",      required_argument, 0, 'S'},
+    {"state_file", required_argument, 0, 'F'},
     {"help",       no_argument,       0, 'h'},
     {0, 0, 0, 0}
 };
@@ -58,6 +61,8 @@ static void help_options(void)
     std::cerr << "  --trace       | -t 0|1        Enable VCD trace (default 1)"          << std::endl;
     std::cerr << "  --seed        | -s NUM        Random seed"                           << std::endl;
     std::cerr << "  --vcd_name    | -w FILE       VCD file name (default sysc_wave.vcd)" << std::endl;
+    std::cerr << "  --state       | -S 0|1        Dump GPR/CSR state to the log at the end" << std::endl;
+    std::cerr << "  --state_file  | -F FILE       Write GPR/CSR state to FILE (native scr1_final_state.txt format)" << std::endl;
     std::cerr << "Environment:"                                                         << std::endl;
     std::cerr << "  ENABLE_WAVES=no               Disable tracing"                       << std::endl;
     std::cerr << "  WAVES_DELAY_US=N              Delay trace start"                     << std::endl;
@@ -73,6 +78,8 @@ int main(int argc, char *argv[])
 {
     int         trace      = 1;
     int         seed       = 1;
+    int         state_log  = 0;
+    const char *state_file = NULL;
     int64_t     max_cycles = DEFAULT_MAX_CYCLES;
     const char *vcd_name   = "sysc_wave.vcd";
     const char *filename   = NULL;
@@ -113,6 +120,12 @@ int main(int argc, char *argv[])
             case 'w':
                 vcd_name = optarg;
                 break;
+            case 'S':
+                state_log = strtol(optarg, NULL, 0);
+                break;
+            case 'F':
+                state_file = optarg;
+                break;
             case 'h':
             case '?':
             default:
@@ -152,6 +165,21 @@ int main(int argc, char *argv[])
 
     // Go!
     int rc = tb->run((uint64_t)max_cycles);
+
+    const char *status = Verilated::gotError() ? "ERROR"
+                       : (rc == 0)             ? "PASS"
+                       :                         "TIMEOUT";
+
+    // Architectural state dump (GPRs + CSRs)
+    if (state_log || state_file)
+    {
+        scr1_state st;
+        tb->capture_state(st);
+        if (state_log)
+            state_dump::to_log(st, status, tb->sim_time_ns());
+        if (state_file)
+            state_dump::to_file(state_file, st, status, tb->sim_time_ns());
+    }
 
     if (Verilated::gotError())
     {

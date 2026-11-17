@@ -65,6 +65,11 @@ void logger::error(const std::string &msg) const
     std::cerr << paint(PREFIX_FAIL, COLOR_RED) << " " << msg << std::endl;
 }
 
+void logger::raw(const std::string &msg) const
+{
+    std::cout << msg << std::flush;
+}
+
 //--------------------------------------------------------------------
 // Test result reports
 //--------------------------------------------------------------------

@@ -23,6 +23,8 @@ public:
     void info(const std::string &msg) const;
     void warning(const std::string &msg) const;
     void error(const std::string &msg) const;
+    // Multiline text as-is (no prefix, no color)
+    void raw(const std::string &msg) const;
 
     // Test result reports
     void test_start(const std::string &test) const;

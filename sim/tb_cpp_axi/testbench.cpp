@@ -4,6 +4,7 @@
 
 #include "elf_load.h"
 #include "logger.h"
+#include "state_dump.h"
 #include "testbench.h"
 
 //--------------------------------------------------------------------
@@ -308,6 +309,14 @@ void testbench::set_trace_delay_us(uint32_t us)
 #else
     (void)us;
 #endif
+}
+
+//--------------------------------------------------------------------
+// capture_state
+//--------------------------------------------------------------------
+void testbench::capture_state(scr1_state &st) const
+{
+    state_dump::capture(m_top.get(), st);
 }
 
 //--------------------------------------------------------------------

@@ -18,6 +18,13 @@ RTL_LIST       += $(SRC_DIR)/core/pipeline/scr1_tracelog.sv
 # Verilator options
 VERILATOR_OPTS ?= -Wno-fatal --no-timing --trace
 
+# Expose internal signals (GPR/CSR state dump support, same as the
+# native STATE_DUMP=1 flow). Set STATE_DUMP=0 for a faster build.
+STATE_DUMP     ?= 1
+ifeq ($(STATE_DUMP), 1)
+VERILATOR_OPTS += --public-flat-rw
+endif
+
 TARGETS         = $(OUTPUT_DIR)/V$(TOP).h
 
 ###############################################################################

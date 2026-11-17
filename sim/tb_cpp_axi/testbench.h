@@ -13,6 +13,8 @@
 #include "Vscr1_top_axi.h"
 #include "tb_axi_mem.h"
 
+struct scr1_state;
+
 //--------------------------------------------------------------------
 // Simulation time base: 1 unit = 1 ns, clk period = 10 ns (100 MHz)
 //--------------------------------------------------------------------
@@ -43,6 +45,9 @@ public:
     uint64_t sim_time_ns(void) const { return m_time; }
     uint32_t entry_point(void) const { return m_entry_point; }
     uint64_t print_count(void) const { return m_mem.print_count(); }
+
+    // Capture the architectural state (GPRs + CSRs) of the DUT
+    void capture_state(scr1_state &st) const;
 
 private:
     void tick(void);

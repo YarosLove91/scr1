@@ -11,7 +11,7 @@
 // the CSR-relevant subset. Both get it as "commit_vif" via
 // config_db and only READ it through mon_cb (#1step, race-free;
 // the single driver is the harness port connection). Signal
-// semantics: scr1_commit_probe; DESIGN_VS_IBEX.md §5.
+// semantics: scr1_commit_probe.
 // ============================================================
 interface scr1_commit_if (
   input logic clk

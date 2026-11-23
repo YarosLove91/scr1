@@ -8,7 +8,7 @@
 // scr1_mem_model_pkg BEFORE the RTL; the harness consumes the
 // singleton global scr1_tb_pkg::g_mem_model (a class handle
 // crosses the module boundary through a package global - the
-// g_load_path transport pattern, DESIGN_VS_IBEX.md §7).
+// g_load_path transport pattern).
 // Contents (device semantics mirror src/tb/scr1_memory_tb_ahb.sv):
 // 1 MB byte array wrapping at 1 MB, $readmemh-equivalent
 // verilog-hex parser (@addr = BYTE addresses), peek32/poke32

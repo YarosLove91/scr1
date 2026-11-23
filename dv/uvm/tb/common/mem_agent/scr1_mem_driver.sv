@@ -29,8 +29,7 @@
 // scr1_mem_model). Device/register semantics live in
 // scr1_mem_model; program-driven IRQ registers are mirrored to the
 // core here, the async TB stimulus is owned by the IRQ agent
-// (scr1_irq_if OR-merge). Details: dv/uvm/README.md (milestone 5),
-// DESIGN_VS_IBEX.md §4.2.
+// (scr1_irq_if OR-merge). Details: dv/uvm/README.md (milestone 5).
 // ============================================================
   class scr1_mem_driver extends uvm_driver #(scr1_mem_txn);
     `uvm_component_utils(scr1_mem_driver)

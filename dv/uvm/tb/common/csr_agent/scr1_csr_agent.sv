@@ -10,8 +10,7 @@
 // scb.commit_imp (CSR-relevant events only); run_export ->
 // scb.analysis_export (the scoreboard is a uvm_subscriber for the
 // run-end snapshot). scb fetches the RAL model ("reg_top_model")
-// from config_db itself. Details: dv/uvm/README.md (M3/M7),
-// DESIGN_VS_IBEX.md §4.4.
+// from config_db itself. Details: dv/uvm/README.md (M3/M7).
 // ============================================================
   class scr1_csr_agent extends uvm_agent;
     `uvm_component_utils(scr1_csr_agent)

@@ -7,7 +7,7 @@
 // of the core interrupt-pin TB stimulus: plain sequencer typedef;
 // driver = the ONLY driver of the scr1_irq_if stimulus lines;
 // monitor = one item per core-pin transition. Details:
-// dv/uvm/README.md (milestone 6), DESIGN_VS_IBEX.md §4.3.
+// dv/uvm/README.md (milestone 6).
 // ============================================================
   class scr1_irq_agent extends uvm_agent;
     `uvm_component_utils(scr1_irq_agent)

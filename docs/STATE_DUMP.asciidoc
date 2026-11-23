@@ -44,9 +44,7 @@ the files are written when the simulation terminates. One file per test from
 `test_info` is created (`<test>_state.txt`). Without `test_info` (manual run or
 a signature-only build), the single `STATE_FILE` is written. With
 `FINAL_PC=none` the snapshot is taken when each test ends instead of at the exit
-PC. Note: the root Makefile launches the simulator once per test, so each run
-normally carries a single-test list and writes one `<test>_state.txt`; multi-test
-lists are still supported for direct simulator invocations.
+PC.
 
 The dump is also written on `SIGINT`/`SIGTERM` and when `MAX_CYCLES` is reached.
 

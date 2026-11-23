@@ -97,8 +97,6 @@ make waves                              # прогон с VCD (logs/waves.vcd)
 ```
 dv/uvm/
 ├── Makefile                  # uvm_download / hex / build / run / waves
-├── DESIGN_VS_IBEX.md         # структурные отличия от эталона ibex dv/uvm:
-│                             #   карта соответствий, адаптации и их причины
 ├── dut -> ../../src          # СИМЛИНК на дерево RTL: копий DUT нет, правки
 │                             #   разработчиков ядра попадают в окружение напрямую
 ├── tb/
@@ -642,7 +640,7 @@ Stall-режимы (рантайм-плюсарги, пересборка не �
 `DMEM_PATTERN=` → `+imem_pattern/+dmem_pattern` (семантика memory tb:
 `0` = random wait-states, `FFFFFFFF` = без задержек (дефолт), иначе бит[0]
 ротационной маски). **ВНИМАНИЕ: любые IMEM wait-states ломают исполнение
-(trap-луп) — reproduced и в native-потоке, см. docs/bug_story/BUG-003;
+(trap-луп) — reproduced и в native-потоке (баг legacy memory tb, не ядра);
 для stall-покрытия используйте DMEM_PATTERN=0.**
 
 ### Результаты 2026-11-15 (merged: hello/isr_sample base, directed vector,
@@ -848,9 +846,8 @@ DMEM=1 → 20592, DMEM=3 → 24194, IMEM3+DMEM3 → 38683; a5_1 DMEM=3 →
 **ГЛАВНЫЙ ВЫВОД (BUG-003): легитимные IMEM wait-states НЕ ломают ядро —
 зависание легаси-паттернов есть баг `scr1_memory_tb_ahb` (при
 `req_ack=0` imem-канал держит `hready=1` и выдаёт `hrdata='x` → в
-2-state `0x00000000` → illegal → trap-луп); детали и команды —
-`docs/bug_story/BUG-003-imem-waitstates.md`, секция «Эксперимент с
-mem-агентом (этап B)».** COV-прогон (IMEM=3+DMEM=3, RUN_TAG=agent_stall)
+2-state `0x00000000` → illegal → trap-луп); детали — в эксперименте с
+mem-агентом (этап B).** COV-прогон (IMEM=3+DMEM=3, RUN_TAG=agent_stall)
 + `cov_merge`: merged **54.9% (339/617)** — впервые закрыты
 `cp_retire_stall.imem_stall` (29) / `both_stall` (1784), imem/both-колонки
 `x_cat_stall`, `exc_cg.load_access` EC5 (1); EC7 (9).

@@ -8,7 +8,7 @@
 // model never drives the core, no driver/sequencer). Streams:
 // mon.ap -> scb.commit_imp; run_export -> scb.run_imp (both via
 // `uvm_analysis_imp_decl - verified working on 5.053 stack).
-// Details: dv/uvm/README.md (cosim sections), DESIGN_VS_IBEX.md.
+// Details: dv/uvm/README.md (cosim sections).
 // ============================================================
   class scr1_cosim_agent extends uvm_agent;
     `uvm_component_utils(scr1_cosim_agent)

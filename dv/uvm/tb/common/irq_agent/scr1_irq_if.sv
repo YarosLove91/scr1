@@ -11,7 +11,7 @@
 // PROGRAM writes over AHB at EXT_IRQ_ADDR/SOFT_IRQ_ADDR; ONLY
 // driver = mem agent, assigned in scr1_tb_top). The OR is a
 // continuous assign - exactly one procedural driver per signal
-// (MULTIDRIVEN rule, DESIGN_VS_IBEX.md §7). The harness absorbs
+// (MULTIDRIVEN rule). The harness absorbs
 // the IPIC geometry (non-IPIC builds take bit 0). Clocking:
 // scr1_ahb_mem_if house style (driver out #0, monitor #1step).
 // NB: NO initial block - every variable has exactly one source.

@@ -12,7 +12,7 @@
 // documented at the code; exit-mask legal divergences at the
 // on_run_end call site. Verdict counters g_diff_*/g_csr_diff_*
 // live in scr1_tb_pkg. Details: dv/uvm/README.md (milestones
-// 2A/2B, 7), DESIGN_VS_IBEX.md §4.5.
+// 2A/2B, 7).
 // ============================================================
   class scr1_cosim_scoreboard extends uvm_scoreboard;
     `uvm_component_utils(scr1_cosim_scoreboard)

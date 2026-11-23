@@ -276,7 +276,7 @@ make cov_directed MEM_AGENT=1 COV=1 CROSS_PREFIX=...
 игнорируются (у него своя семантика wait-states); **любые IMEM
 wait-states легаси-паттернов ломают исполнение из-за бага самого
 memory tb (hready=1 + hrdata='x при !req_ack) — см. этап-B эксперимент
-в `docs/bug_story/BUG-003-imem-waitstates.md`; stall-покрытие imem
+реактивного memory-агента; stall-покрытие imem
 достигается агентом** (`MEM_AGENT=1 AGENT_IMEM_STALL=3 COV=1`).
 
 ## Кампании со случайными wait-states (AGENT_RANDOM_STALL)
@@ -343,7 +343,7 @@ AGENT_RANDOM_STALL seed'а из CFG_RANDOM-баннера драйвера (`-` 
   IRQ-трапы остаются DUT-only (устройства не смоделированы в 2B).
 * **Легаси IMEM wait-states ломают исполнение** (trap-луп; native-репро) —
   баг `scr1_memory_tb_ahb`, НЕ ядра: этап-B эксперимент реактивного
-  memory-агента (`MEM_AGENT=1 AGENT_IMEM_STALL=1/3` → PASS) —
-  `docs/bug_story/BUG-003-imem-waitstates.md`. Stall-покрытие imem/both
+  memory-агента (`MEM_AGENT=1 AGENT_IMEM_STALL=1/3` → PASS).
+  Stall-покрытие imem/both
   и EC5 (load access) закрыты агентом; легаси-путь по-прежнему ограничен
   `DMEM_PATTERN=0`.

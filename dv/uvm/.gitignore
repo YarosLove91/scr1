@@ -1,0 +1,18 @@
+# UVM library (make uvm_download)
+uvm-verilator/
+.uvm_downloaded
+
+# Verilator build outputs
+uvm_out/
+uvm_out_trace/
+
+# Run logs and waves
+logs/
+*.vcd
+
+# SW vector builds
+sw/build/
+
+# Extracted vendor binaries (spike from scr1-spike-verif image)
+tools/bin/
+coverage*.dat

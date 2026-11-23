@@ -1,0 +1,13 @@
+# ISS description for the SCR1 fuzz target (reference information).
+#
+# The dv/fuzz flow does NOT use riscv-dv's ISS steps: the golden reference
+# is produced either in-process (dv/uvm SPIKE_COSIM=1, dpi/spike_cosim_dpi.cc)
+# or offline by dv/uvm/tools/spike_log2csv.py. The flags below match those
+# flows (docker/scr1-spike/compare_state.py convention):
+#   --no-dm      : debug module must not occupy [0x0,0x1000) (RAM image there)
+#   --disable-dtb: no boot ROM at 0x1000
+#   --pc=0x200   : SCR1 reset vector
+#   -m ...       : RAM 64K, TCM 0x480000, timer 0x490000, console 0xF0000000
+- iss: spike
+  path_var: "SPIKE_HOME"
+  cmd: "spike --no-dm --disable-dtb --pc=0x200 --isa=rv32imc_zicsr_zifencei -m0x0:0x10000,0x480000:0x10000,0x490000:0x1000,0xf0000000:0x1000 -l --log-commits <elf>"

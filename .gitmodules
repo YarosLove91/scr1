@@ -10,3 +10,6 @@
 [submodule "dependencies/riscv-arch"]
 	path = dependencies/riscv-arch
 	url = https://github.com/riscv/riscv-arch-test
+[submodule "dv/fuzz/riscv-dv"]
+	path = dv/fuzz/riscv-dv
+	url = https://github.com/google/riscv-dv.git

@@ -153,7 +153,7 @@ Makefile supports:
 * configuration setup - `CFG = <MAX, BASE, MIN, CUSTOM>`,
 * parameters for CUSTOM configuration - `ARCH = <IMC, IC, IM, I, EMC, EM, EC, E>, VECT_IRQ = <0, 1>, IPIC = <0, 1>, TCM = <0, 1>`
 * tests subset to run - `TARGETS = <hello, isr_sample, riscv_isa, riscv_compliance, riscv_arch, dhrystone21, coremark>`
-* enabling tracelog - `TRACE = <0, 1>`
+* enabling tracelog - `TRACE = <0, 1>` (deprecated: the legacy batch tracelog has been removed; the knob only remains in the build directory name)
 * waveform instruction trace (VCD) - `TRACE_DISASM = <0, 1>`
 * program execution text log - `TRACE_LOGGER = <0, 1>`
 * final architectural state dump (Verilator) - `STATE_DUMP = <0, 1>`, see `docs/STATE_DUMP.asciidoc`
@@ -161,9 +161,9 @@ Makefile supports:
 
 Examples:
 ``` sh
-    make run_verilator_wf CFG=MAX BUS=AXI TARGETS="riscv_isa riscv_compliance" TRACE=1
-    make run_vcs CFG=BASE BUS=AHB TARGETS="dhrystone21 coremark" SIM_BUILD_OPTS="-gui"
-    make run_modelsim CFG=CUSTOM BUS=AXI ARCH=I VECT_IRQ=1 IPIC=1 TCM=0 TARGETS=isr_sample
+     make run_verilator_wf CFG=MAX BUS=AXI TARGETS="riscv_isa riscv_compliance" TRACE_DISASM=1
+     make run_vcs CFG=BASE BUS=AHB TARGETS="dhrystone21 coremark" SIM_BUILD_OPTS="-gui"
+     make run_modelsim CFG=CUSTOM BUS=AXI ARCH=I VECT_IRQ=1 IPIC=1 TCM=0 TARGETS=isr_sample
 ```
 
 Trace/state examples:
@@ -180,8 +180,9 @@ With the trace/state flags, each test in `TARGETS` writes its own files under
 * `<test>.log` - program execution text log (`TRACE_LOGGER=1`);
 * `<test>_state.txt` - final GPR/CSR state (`STATE_DUMP=1`).
 
-The testbench still runs the whole list as one simulation; the native
-`test_results.txt` and `sim_results.txt` remain per-run summaries. See
+The Makefile launches the simulator once per test, so one run = one trace and
+one VCD (no in-run splitting or concatenation); the native `test_results.txt`
+and `sim_results.txt` remain per-make-run summaries. See
 `docs/TRACE_LOGGER.asciidoc` and `docs/STATE_DUMP.asciidoc` for details.
 
 Build and run parameters can be configured in the `./Makefile`.

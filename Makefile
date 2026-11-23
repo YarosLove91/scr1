@@ -82,17 +82,15 @@ endif
 
 override ARCH=$(ARCH_tmp)
 
-# Use this parameter to enable tracelog
+# Legacy knob: the batch tracelog concatenator (scr1_tracelog.sv, TRACE=1) has
+# been removed; TRACE only remains in the build directory name for path
+# compatibility. Use TRACE_LOGGER / TRACE_DISASM / STATE_DUMP instead.
 TRACE ?= 0
 
 # Use this parameter to enable the instruction trace / disassembler (Verilator)
 TRACE_DISASM ?= 0
 
-ifeq ($(TRACE), 1)
-    export SIM_TRACE_DEF = SCR1_TRACE_LOG_EN
-else
-    export SIM_TRACE_DEF = SCR1_TRACE_LOG_DIS
-endif
+export SIM_TRACE_DEF :=
 
 ifeq ($(TRACE_DISASM), 1)
     override SIM_TRACE_DEF += SCR1_TRACE_DISASM_EN
@@ -100,9 +98,11 @@ else
     override SIM_TRACE_DEF += SCR1_TRACE_DISASM_DIS
 endif
 
-# Per-test trace directory (one file per test)
+# Trace output directory. The simulator is launched once per test, so every run
+# writes exactly one trace and one VCD: build/trace/<test>.{log,vcd}
 VCD_DIR ?= $(CURDIR)/build/trace
-VCD_DIR_OPT = +VCD_DIR=$(VCD_DIR)
+# $$name is the shell variable with the current test name (set in the run loops)
+VCD_OPT = +VCD_FILE=$(VCD_DIR)/$${name}.vcd
 $(shell mkdir -p $(VCD_DIR))
 
 # Use this parameter to enable the program execution text trace logger
@@ -115,7 +115,7 @@ TRACE_LOGGER_TRAP_DETAIL ?= 1
 ifeq ($(TRACE_LOGGER), 1)
     override SIM_TRACE_DEF += SCR1_TRACE_LOGGER_EN
     TRACE_LOG_DIR ?= $(CURDIR)/build/trace
-    TRACE_LOG_OPT = +TRACE_LOG_DIR=$(TRACE_LOG_DIR)
+    TRACE_LOG_OPT = +TRACE_LOG=$(TRACE_LOG_DIR)/$${name}.log
     $(shell mkdir -p $(TRACE_LOG_DIR))
     ifeq ($(TRACE_LOGGER_DISASM), 1)
         override SIM_TRACE_DEF += SCR1_TRACE_LOGGER_DISASM_EN
@@ -259,7 +259,7 @@ endif
 default: clean_test_list run_verilator
 
 clean_test_list:
-	rm -f $(test_info)
+	rm -f $(test_info) $(test_info).one $(test_results).one
 
 echo_out: tests
 	@echo "                          Test               | build | simulation " ;
@@ -309,31 +309,42 @@ clean_hex: | $(bld_dir)
 $(bld_dir):
 	mkdir -p $(bld_dir)
 
+# One simulator run per test: each launch gets a single-line test list and
+# produces exactly one trace log / one VCD / one state file (<test>.*).
+# Shared reports (test_results.txt, sim_results.txt) are accumulated per make run.
+define run_test_list
+	while IFS= read -r hex || [ -n "$$hex" ]; do \
+		[ -z "$$hex" ] && continue; \
+		name=`basename "$$hex" .hex`; \
+		printf '%s\n' "$$hex" > $(test_info).one; \
+		printf "" > $(test_results).one; \
+		$(1) \
+		+test_info=$(test_info).one \
+		+test_results=$(test_results).one \
+		$(TRACE_LOG_OPT) \
+		$(2) \
+		+imem_pattern=$(imem_pattern) \
+		+dmem_pattern=$(dmem_pattern) \
+		$(3) | tee -a $(sim_results); \
+		cat $(test_results).one >> $(test_results); \
+	done < $(test_info); \
+	rm -f $(test_info).one $(test_results).one
+endef
+
 run_vcs: $(test_info)
 	$(MAKE) -C $(root_dir)/sim build_vcs SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
 	printf "" > $(test_results);
 	cd $(bld_dir); \
-	$(bld_dir)/simv  -V \
-	+test_info=$(test_info) \
-	+test_results=$(test_results) \
-	$(TRACE_LOG_OPT) \
-	+imem_pattern=$(imem_pattern) \
-	+dmem_pattern=$(dmem_pattern) \
-	$(VCS_OPTS) | tee $(sim_results)  ;\
+	echo $(top_module) | tee $(sim_results); \
+	$(call run_test_list,$(bld_dir)/simv -V,, $(VCS_OPTS)); \
 	printf "                          Test               | build | simulation \n" ; \
 	printf "$$(cat $(test_results)) \n"
 run_modelsim: $(test_info)
 	$(MAKE) -C $(root_dir)/sim build_modelsim SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)"; \
 	printf "" > $(test_results); \
 	cd $(bld_dir); \
-	vsim -c -do "run -all" +nowarn3691 \
-	+test_info=$(test_info) \
-	+test_results=$(test_results) \
-	$(TRACE_LOG_OPT) \
-	+imem_pattern=$(imem_pattern) \
-	+dmem_pattern=$(dmem_pattern) \
-	work.$(top_module) \
-	$(MODELSIM_OPTS) | tee $(sim_results)  ;\
+	echo $(top_module) | tee $(sim_results); \
+	$(call run_test_list,vsim -c -do "run -all" +nowarn3691,,$(MODELSIM_OPTS) work.$(top_module)); \
 	printf "Simulation performed on $$(vsim -version) \n" ;\
 	printf "                          Test               | build | simulation \n" ; \
 	printf "$$(cat $(test_results)) \n"
@@ -342,15 +353,8 @@ run_ncsim: $(test_info)
 	$(MAKE) -C $(root_dir)/sim build_ncsim SIM_CFG_DEF="$(SIM_CFG_DEF)" SIM_TRACE_DEF="$(SIM_TRACE_DEF)" SIM_BUILD_OPTS="$(SIM_BUILD_OPTS)";
 	printf "" > $(test_results);
 	cd $(bld_dir); \
-	irun \
-	-R \
-	-64bit \
-	+test_info=$(test_info) \
-	+test_results=$(test_results) \
-	$(TRACE_LOG_OPT) \
-	+imem_pattern=$(imem_pattern) \
-	+dmem_pattern=$(dmem_pattern) \
-	$(NCSIM_OPTS) | tee $(sim_results)  ;\
+	echo $(top_module) | tee $(sim_results); \
+	$(call run_test_list,irun -R -64bit,, $(NCSIM_OPTS)); \
 	printf "Simulation performed on $$(irun -version) \n" ;\
 	printf "                          Test               | build | simulation \n" ; \
 	printf "$$(cat $(test_results)) \n"
@@ -360,14 +364,7 @@ run_verilator: $(test_info)
 	printf "" > $(test_results);
 	cd $(bld_dir); \
 	echo $(top_module) | tee $(sim_results); \
-	$(bld_dir)/verilator/V$(top_module) \
-	+test_info=$(test_info) \
-	+test_results=$(test_results) \
-	$(TRACE_LOG_OPT) \
-	$(STATE_DUMP_OPT) \
-	+imem_pattern=$(imem_pattern) \
-	+dmem_pattern=$(dmem_pattern) \
-	$(VERILATOR_OPTS) | tee -a $(sim_results) ;\
+	$(call run_test_list,$(bld_dir)/verilator/V$(top_module),$(STATE_DUMP_OPT),$(VERILATOR_OPTS)); \
 	printf "Simulation performed on $$(verilator -version) \n" ;\
 	printf "                          Test               | build | simulation \n" ; \
 	printf "$$(cat $(test_results)) \n"
@@ -378,15 +375,7 @@ run_verilator_wf: $(test_info)
 	cd $(bld_dir); \
 	mkdir -p $(root_dir)/build/trace; \
 	echo $(top_module) | tee $(sim_results); \
-	$(bld_dir)/verilator/V$(top_module) \
-	+test_info=$(test_info) \
-	+test_results=$(test_results) \
-	$(TRACE_LOG_OPT) \
-	$(STATE_DUMP_OPT) \
-	$(VCD_DIR_OPT) \
-	+imem_pattern=$(imem_pattern) \
-	+dmem_pattern=$(dmem_pattern) \
-	$(VERILATOR_OPTS) | tee -a $(sim_results)  ;\
+	$(call run_test_list,$(bld_dir)/verilator/V$(top_module),$(STATE_DUMP_OPT) $(VCD_OPT),$(VERILATOR_OPTS)); \
 	printf "Simulation performed on $$(verilator -version) \n" ;\
 	printf "                          Test               | build | simulation \n" ; \
 	printf "$$(cat $(test_results)) \n"

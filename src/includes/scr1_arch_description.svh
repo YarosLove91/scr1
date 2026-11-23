@@ -203,7 +203,6 @@ parameter bit [`SCR1_DMEM_AWIDTH-1:0]   SCR1_TIMER_ADDR_PATTERN     = 'h00490000
 //------------------------------------------------------------------------------
 
 //`define SCR1_TRGT_SIMULATION            // enable simulation code (automatically defined by root makefile)
-//`define SCR1_TRACE_LOG_EN               // enable tracelog
 //`define SCR1_XPROP_EN                   // enable X-propagation
 
 // Addresses used in testbench

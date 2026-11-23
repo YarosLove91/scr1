@@ -1,0 +1,78 @@
+# -----------------------------------------------------------------------------
+# testlist.yaml — SCR1 fuzz testlist (riscv-dv pygen)
+#
+# Constraints of the SCR1 fuzz flow (dv/fuzz/README.md):
+#   - the whole image must fit the 64K RAM at 0x0 (link.ld starts at 0x200);
+#     default stacks are shrunk by tools/patch_asm.py (STACK_MAX words);
+#   - instr_cnt is kept moderate (text budget);
+#   - exit: ecall -> generated handler -> write_tohost, which patch_asm.py
+#     replaces with the SCR1 epilogue (a0=0 pass code, jump to 0xF8).
+# -----------------------------------------------------------------------------
+
+- test: riscv_arithmetic_basic_test
+  description: >
+    Arithmetic instruction test, no load/store/branch instructions
+  gen_opts: >
+    +instr_cnt=2000
+    +num_of_sub_program=0
+    +directed_instr_0=riscv_int_numeric_corner_stream,4
+    +no_fence=1
+    +no_data_page=1
+    +no_branch_jump=1
+    +boot_mode=m
+    +no_csr_instr=1
+  iterations: 1
+  no_iss: 1
+  gen_test: riscv_instr_base_test
+  rtl_test: scr1_csr_test
+
+- test: riscv_rand_instr_test
+  description: >
+    Random instruction mix (branches/jumps allowed, no data pages yet)
+  gen_opts: >
+    +instr_cnt=1500
+    +num_of_sub_program=0
+    +no_fence=1
+    +no_data_page=1
+    +boot_mode=m
+    +no_csr_instr=1
+  iterations: 1
+  no_iss: 1
+  gen_test: riscv_instr_base_test
+  rtl_test: scr1_csr_test
+
+- test: riscv_fence_test
+  description: >
+    Random stream with FENCE/FENCE.I enabled (fcov fence/fence_i bins);
+    branches/jumps allowed, no data pages, no CSR in the body
+  gen_opts: >
+    +instr_cnt=1500
+    +num_of_sub_program=0
+    +no_data_page=1
+    +boot_mode=m
+    +no_csr_instr=1
+  iterations: 1
+  no_iss: 1
+  gen_test: riscv_instr_base_test
+  rtl_test: scr1_csr_test
+
+- test: riscv_csr_rand_test
+  description: >
+    Random stream exercising the CSR path in lockstep. pygen master
+    emits NO CSR instructions in the body (riscv_instr.py:202 compares
+    the init_privileged_mode ENUM to the string "MACHINE_MODE" - always
+    False), so +no_csr_instr is kept and tools/patch_asm.py injects
+    CSR_INJECT (default 12) random CSR instructions from the SCR1-safe
+    whitelist (mscratch/mepc/mtval all forms; mstatus/mcause write-only;
+    see the patch_asm docstring for the full WARL analysis).
+  gen_opts: >
+    +instr_cnt=1500
+    +num_of_sub_program=0
+    +no_fence=1
+    +no_data_page=1
+    +boot_mode=m
+    +no_csr_instr=1
+  iterations: 1
+  no_iss: 1
+  gen_test: riscv_instr_base_test
+  rtl_test: scr1_csr_test

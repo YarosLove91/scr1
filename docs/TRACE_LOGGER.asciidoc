@@ -30,11 +30,11 @@ interface and writes one snapshot per test.
 | Final architectural state (GPR + CSR)
 | `STATE_DUMP=1`
 | `build/trace/<test>_state.txt` (see `docs/STATE_DUMP.asciidoc`)
-
-| Legacy tracelog (separate mechanism)
-| `TRACE=1`
-| one `build/<...>/tracelog_core_<hart>.log` per run, sections `# Test:`
 |===
+
+One simulator run produces exactly one text trace and one VCD: the Makefile
+launches the simulator once per test from the `TARGETS` list (the legacy batch
+tracelog concatenator `scr1_tracelog.sv`, `TRACE=1`, has been removed).
 
 == Branches
 
@@ -83,23 +83,20 @@ Every test gets its own files in `build/trace/`:
 * `<test>.log` - program execution text log for that test (`TRACE_LOGGER=1`);
 * `<test>_state.txt` - final GPR/CSR state for that test (`STATE_DUMP=1`).
 
-The testbench still runs the whole test list in one simulation (the normal
-`TARGETS="..."` batch run); the tracers split the outputs, so each test gets its
-own log and VCD. Combined log and VCD files are not produced by the new
-tracers (the legacy `TRACE=1` tracelog is a separate mechanism and still writes
-one combined file with `# Test:` sections). The native `test_results.txt` and
-`sim_results.txt` remain single per-run files.
+The Makefile launches the simulator once per test: each run receives a
+single-line test list, so one run = one trace log + one VCD, with no in-run
+splitting or concatenation. The run commands pass the full output paths via
+plusargs: `+TRACE_LOG=build/trace/<test>.log` (text logger) and
+`+VCD_FILE=build/trace/<test>.vcd` (waveform wrapper; default without the
+plusarg is `./simx.vcd` in the working directory). The native `test_results.txt`
+and `sim_results.txt` remain single per-make-run files (accumulated across the
+launches).
 
 The test name is derived from the test file basename without the extension
-(`isr_sample.hex` -> `isr_sample`). Duplicate names receive a `_2`, `_3`, ...
-suffix. The directory is created automatically. The VCD directory can be
-overridden with `+VCD_DIR=<dir>`; the text log directory with
-`+TRACE_LOG_DIR=<dir>`.
+(`isr_sample.hex` -> `isr_sample`). The directories are created automatically.
 
-The per-test VCD files keep the global simulation timestamp. Each file starts
-after that test's reset (so it contains no records from the previous test) and
-ends at the exit PC (`0xF8`); the files are sequential in time with the reset
-gap between tests.
+Each VCD covers its whole single-test run (global simulation timestamp, from
+time 0 to the end of the run).
 
 All three facilities can be enabled together:
 
@@ -151,7 +148,7 @@ make TARGETS=isr_sample run_verilator CROSS_PREFIX=$CROSS_PREFIX TRACE_LOGGER=1
 ----
 
 Output: `build/trace/<test>.log` for every test (directory auto-created).
-The output directory can be overridden at run time with `+TRACE_LOG_DIR=<dir>`.
+The log path can be overridden at run time with `+TRACE_LOG=<file>`.
 
 === 3. Text log with mnemonic (optional)
 
@@ -246,7 +243,7 @@ Enable/disable with `TRACE_LOGGER_TRAP_DETAIL=0|1`.
 |===
 | Parameter | Default | Meaning
 
-| `LOG_FILE` | `scr1_trace.log` | fallback used to derive the output directory when `+TRACE_LOG_DIR` is absent
+| `LOG_FILE` | `scr1_trace.log` | fallback log path used when `+TRACE_LOG` is absent
 | `TIME_MODE` | `0` | `0` = internal cycle counter, `1` = `$time`
 | `TRACE_TRAP_DETAIL` | `1` via `TRACE_LOGGER_TRAP_DETAIL` | append `mcause/mepc/mtval/mtvec/instr` (+mnemonic) to trap lines
 | `DISASM_EN` | `0` | append mnemonic/operands (`TRACE_LOGGER_DISASM=1`)
@@ -254,9 +251,8 @@ Enable/disable with `TRACE_LOGGER_TRAP_DETAIL=0|1`.
 |===
 
 `TIME_MODE=0` is the default because the SCR1 Verilator wrapper does not advance
-`$time` (the VCD is written with an explicit time argument); the stock
-`scr1_tracelog` uses a cycle counter for the same reason. Use `TIME_MODE=1` with
-simulators that do advance `$time`.
+`$time` (the VCD is written with an explicit time argument). Use `TIME_MODE=1`
+with simulators that do advance `$time`.
 
 == How it works (short)
 
@@ -267,14 +263,12 @@ retirement (`exu2pipe_instret_o`, PC = `exu2pipe_pc_curr_o`) it finds the FIFO
 entry matching the retiring PC (skipping flushed wrong-path entries) and prints
 that instruction together with the MPRF write and the trap status.
 
-Per-test files: the tb publishes the current test name; the logger closes the
-previous log and opens `build/trace/<test>.log` when the name changes. The
-waveform wrapper starts a fresh VCD tracer for each test (a VCD tracer cannot be
-reopened with an earlier time base), using the test order from `test_info`. The
-VCD file is opened after that test's reset and closed at the exit PC (`0xF8`), so
-it contains no records from the previous test and no post-exit fetch. The state
-dump tracks the `test_running` tb signal, stores one snapshot per test, and writes
-all `<test>_state.txt` files when the simulation finishes.
+Per-test files: the Makefile launches the simulator once per test and passes the
+output paths (`+TRACE_LOG`, `+VCD_FILE`). The logger opens its single log file
+at time 0 and writes until the end of the run; the waveform wrapper writes one
+VCD for the whole run. The state dump tracks the `test_running` tb signal,
+stores one snapshot per test of its run, and writes the `<test>_state.txt`
+files when the simulation finishes.
 
 == Troubleshooting
 
@@ -283,7 +277,7 @@ all `<test>_state.txt` files when the simulation finishes.
 * `riscv64-unknown-elf-readelf: command not found` — add the symlink described
   in Prerequisites (affects arch/compliance).
 * Log is not created — `TRACE_LOGGER=1` is required; each test writes
-  `build/trace/<test>.log` (the directory is created automatically and can be
-  overridden with `+TRACE_LOG_DIR`).
+  `build/trace/<test>.log` (the directory is created automatically; the path
+  can be overridden with `+TRACE_LOG=<file>`).
 * `Time`/`Cycle` all zeros — you are using `TIME_MODE=1` on a simulator that
   does not advance `$time`; use `TIME_MODE=0`.

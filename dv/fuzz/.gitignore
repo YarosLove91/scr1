@@ -1,0 +1,7 @@
+# Generated programs / intermediate artifacts
+work/
+# Local python venv (make venv)
+.venv/
+# Python caches
+__pycache__/
+*.pyc

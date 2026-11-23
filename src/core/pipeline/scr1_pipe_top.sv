@@ -774,53 +774,6 @@ assign ifu2hdu_pbuf_rdy_qlfy    = ifu2hdu_pbuf_rdy  & {$bits(ifu2hdu_pbuf_rdy){p
 
 `ifdef SCR1_TRGT_SIMULATION
 //-------------------------------------------------------------------------------
-// Tracelog
-//-------------------------------------------------------------------------------
-
-scr1_tracelog i_tracelog (
-    .rst_n                          (pipe_rst_n                         ),
-    .clk                            (clk                                )
-`ifdef SCR1_TRACE_LOG_EN
-    ,
-    .soc2pipe_fuse_mhartid_i        (soc2pipe_fuse_mhartid_i            ),
-
-    // MPRF
-    .mprf2trace_int_i               (i_pipe_mprf.mprf_int               ),
-    .mprf2trace_wr_en_i             (i_pipe_mprf.exu2mprf_w_req_i       ),
-    .mprf2trace_wr_addr_i           (i_pipe_mprf.exu2mprf_rd_addr_i     ),
-    .mprf2trace_wr_data_i           (i_pipe_mprf.exu2mprf_rd_data_i     ),
-
-    // EXU
-    .exu2trace_update_pc_en_i       (i_pipe_exu.update_pc_en            ),
-    .exu2trace_update_pc_i          (i_pipe_exu.update_pc               ),
-
-    // IFU
-    .ifu2trace_instr_i              (i_pipe_ifu.ifu2idu_instr_o         ),
-
-    // CSR
-    .csr2trace_mstatus_mie_i        (i_pipe_csr.csr_mstatus_mie_ff      ),
-    .csr2trace_mstatus_mpie_i       (i_pipe_csr.csr_mstatus_mpie_ff     ),
-    .csr2trace_mtvec_base_i         (i_pipe_csr.csr_mtvec_base          ),
-    .csr2trace_mtvec_mode_i         (i_pipe_csr.csr_mtvec_mode          ),
-    .csr2trace_mie_meie_i           (i_pipe_csr.csr_mie_meie_ff         ),
-    .csr2trace_mie_mtie_i           (i_pipe_csr.csr_mie_mtie_ff         ),
-    .csr2trace_mie_msie_i           (i_pipe_csr.csr_mie_msie_ff         ),
-    .csr2trace_mip_meip_i           (i_pipe_csr.csr_mip_meip            ),
-    .csr2trace_mip_mtip_i           (i_pipe_csr.csr_mip_mtip            ),
-    .csr2trace_mip_msip_i           (i_pipe_csr.csr_mip_msip            ),
-    .csr2trace_mepc_i               (i_pipe_csr.csr_mepc_ff             ),
-    .csr2trace_mcause_irq_i         (i_pipe_csr.csr_mcause_i_ff         ),
-    .csr2trace_mcause_ec_i          (i_pipe_csr.csr_mcause_ec_ff        ),
-    .csr2trace_mtval_i              (i_pipe_csr.csr_mtval_ff            ),
-
-    // Events
-    .csr2trace_e_exc_i              (i_pipe_csr.e_exc                   ),
-    .csr2trace_e_irq_i              (i_pipe_csr.e_irq                   ),
-    .pipe2trace_e_wake_i            (pipe2clkctl_wake_req_o             )
-`endif // SCR1_TRACE_LOG_EN
-);
-
-//-------------------------------------------------------------------------------
 // Instruction trace / disassembler (simulation only, TRACE_DISASM=1)
 //-------------------------------------------------------------------------------
 `ifdef SCR1_TRACE_DISASM_EN

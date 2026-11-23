@@ -12,6 +12,9 @@
 /// FIFO of {pc, instr} pushed on every instruction accepted by the IDU (with a
 /// byte-accurate PC) and matches the retiring PC, skipping flushed entries.
 ///
+/// One simulation run produces exactly one log file: +TRACE_LOG=<path> (the
+/// Makefile launches the simulator once per test), default SCR1_TRACE_LOG_FILE.
+///
 /// Enabled by SCR1_TRACE_LOGGER_EN (sim makefile: TRACE_LOGGER=1).
 ///
 
@@ -73,9 +76,6 @@ import scr1_trace_decoder_pkg::*;
 //------------------------------------------------------------------------------
 integer trace_fd;
 
-// Current test name (assigned hierarchically by the tb when a test starts)
-string test_name;
-
 // Free-running cycle counter (Verilator $time is not advanced by this tb)
 logic [63:0] time_cnt;
 
@@ -85,79 +85,20 @@ always_ff @(negedge rst_n, posedge clk) begin
 end
 
 string log_file;
-string log_dir;
-string last_test_name;
 
+// One simulation run = one log file (the Makefile launches the simulator once
+// per test and passes the full path via +TRACE_LOG=<file>)
 initial begin
-    int i;
-    int slash;
-
     $timeformat(-9, 0, " ns", 12);
     if (!$value$plusargs("TRACE_LOG=%s", log_file))
         log_file = LOG_FILE;
-    if (!$value$plusargs("TRACE_LOG_DIR=%s", log_dir)) begin
-        slash = -1;
-        for (i = 0; i < log_file.len(); i = i + 1) begin
-            if (log_file[i] == 8'h2F) slash = i;
-        end
-        log_dir = (slash >= 0) ? log_file.substr(0, slash - 1) : ".";
-    end
-    last_test_name = "";
-    trace_fd = 0;
-end
-
-function automatic string path_basename (input string path);
-    int i;
-    int slash;
-    int dot;
-    string s;
-begin
-    if (path.len() == 0) begin
-        return "";
-    end
-    slash = 0;
-    for (i = 0; i < path.len(); i = i + 1) begin
-        if (path[i] == 8'h2F) slash = i + 1;
-    end
-    s = path.substr(slash, path.len() - 1);
-    dot = -1;
-    for (i = 0; i < s.len(); i = i + 1) begin
-        if (s[i] == 8'h2E) dot = i;
-    end
-    if (dot > 0) s = s.substr(0, dot - 1);
-    path_basename = s;
-end
-endfunction
-
-task automatic open_test_log (input string name);
-    string base;
-    string dir;
-    string path;
-begin
-    if (trace_fd != 0) begin
-        $fclose(trace_fd);
-        trace_fd = 0;
-    end
-    if (name.len() == 0) return;
-    base = path_basename(name);
-    if (base.len() == 0) base = "test";
-    dir = (log_dir.len() != 0) ? log_dir : ".";
-    path = $sformatf("%s/%s.log", dir, base);
-    trace_fd = $fopen(path, "w");
+    trace_fd = $fopen(log_file, "w");
     if (trace_fd == 0) begin
-        $display("SCR1_TRACE_LOGGER: cannot open %s", path);
+        $display("SCR1_TRACE_LOGGER: cannot open %s", log_file);
     end else begin
         $fdisplay(trace_fd, "# SCR1 program execution trace");
         $fdisplay(trace_fd, "%s", rtrim($sformatf("%10s %-10s %-10s %-20s %-8s",
                   "Cycle", "PC", "Opcode", "RD write", "Status")));
-    end
-end
-endtask
-
-always @(posedge clk) begin
-    if (test_name != last_test_name) begin
-        last_test_name = test_name;
-        open_test_log(test_name);
     end
 end
 

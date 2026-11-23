@@ -171,12 +171,6 @@ always_ff @(posedge clk) begin
             f_test = $fopen(test_file,"r");
             if (f_test != 0) begin
             // Launch new test
-                `ifdef SCR1_TRACE_LOG_EN
-                    i_top.i_core_top.i_pipe_top.i_tracelog.test_name = test_file;
-                `endif // SCR1_TRACE_LOG_EN
-                `ifdef SCR1_TRACE_LOGGER_EN
-                    i_top.i_core_top.i_pipe_top.i_trace_logger.test_name = test_file;
-                `endif // SCR1_TRACE_LOGGER_EN
                 i_memory_tb.test_file = test_file;
                 i_memory_tb.test_file_init = 1'b1;
                 `ifndef SIGNATURE_OUT

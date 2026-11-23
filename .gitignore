@@ -1,2 +1,3 @@
 build/**
 sim/tests/benchmarks/coremark/src/**
+dv/uvm/uvm-verilator
